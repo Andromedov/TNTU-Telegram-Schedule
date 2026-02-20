@@ -10,20 +10,100 @@ TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 HASHES_FILE = "data/schedule_hashes.json"
 
 
+def sanitize_group(group_name: str) -> str:
+    """Замінює візуально схожі англійські літери на українські для уникнення помилок вводу."""
+    mapping = {
+        'A': 'А', 'a': 'а', 'B': 'В', 'C': 'С', 'c': 'с', 'E': 'Е', 'e': 'е',
+        'H': 'Н', 'I': 'І', 'i': 'і', 'K': 'К', 'k': 'к', 'M': 'М', 'm': 'м',
+        'O': 'О', 'o': 'о', 'P': 'Р', 'p': 'р', 'T': 'Т', 't': 'т', 'X': 'Х', 'x': 'х'
+    }
+    return "".join(mapping.get(ch, ch) for ch in group_name)
+
+
+def _transliterate_for_url(text: str) -> str:
+    """Транслітерує назву групи для формування прямого URL (напр. СТс-21 -> sts21)."""
+    mapping = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'e',
+        'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'i', 'й': 'y', 'к': 'k',
+        'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's',
+        'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh',
+        'щ': 'shch', 'ь': '', 'ю': 'yu', 'я': 'ya',
+        '-': ''
+    }
+    text = text.lower()
+    res = ""
+    for char in text:
+        res += mapping.get(char, char)
+    return res
+
+
 async def fetch_schedule_html(group_name: str) -> str:
-    """Асинхронно завантажує сторінку розкладу для певної групи."""
+    """Асинхронно завантажує сторінку розкладу для певної групи (з розумним пошуком)."""
+    clean_group = sanitize_group(group_name)
+
     try:
-        params = {'p': 'uk/schedule', 'group': group_name}
         async with aiohttp.ClientSession() as session:
-            async with session.get(TNTU_SCHEDULE_URL, params=params) as response:
+            params = {'p': 'uk/schedule'}
+            data = {'group': clean_group}
+
+            async with session.post(TNTU_SCHEDULE_URL, params=params, data=data) as response:
                 if response.status == 200:
-                    return await response.text()
-                else:
-                    logging.error(f"Помилка доступу до сайту ТНТУ: {response.status}")
-                    return None
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    if soup.find('table', id='ScheduleWeek') or soup.find('h2', string=lambda
+                            s: s and clean_group.upper() in s.upper()):
+                        return html
+
+            group_translit = _transliterate_for_url(clean_group)
+            faculties = ['fis', 'fpt', 'fmt', 'fem']
+
+            for fac in faculties:
+                s_param = f"{fac}-{group_translit}"
+                guess_params = {'p': 'uk/schedule', 's': s_param}
+                async with session.get(TNTU_SCHEDULE_URL, params=guess_params) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        if soup.find('table', id='ScheduleWeek') or soup.find('h2', string=lambda
+                                s: s and clean_group.upper() in s.upper()):
+                            return html
+
+            async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    for a_tag in soup.find_all('a', href=True):
+                        if '.pdf' in a_tag['href'].lower() and clean_group.upper() in a_tag.text.upper():
+                            return html
+
+            return None
     except Exception as e:
         logging.error(f"Помилка скрейпінгу: {e}")
         return None
+
+
+async def check_group_exists(group_name: str) -> bool:
+    """Перевіряє, чи існує група на сайті ТНТУ."""
+    clean_group = sanitize_group(group_name)
+    html = await fetch_schedule_html(clean_group)
+    if not html:
+        return False
+
+    soup = BeautifulSoup(html, 'html.parser')
+
+    if soup.find('table', id='ScheduleWeek'):
+        return True
+
+    headers = soup.find_all('h2')
+    for header in headers:
+        if clean_group.upper() in header.text.upper():
+            return True
+
+    for a_tag in soup.find_all('a', href=True):
+        if '.pdf' in a_tag['href'].lower() and clean_group.upper() in a_tag.text.upper():
+            return True
+
+    return False
 
 
 async def _extract_schedule_from_html(html: str, group_name: str, target_date: datetime) -> list:
@@ -32,6 +112,7 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
         return []
 
     soup = BeautifulSoup(html, 'html.parser')
+    clean_group = sanitize_group(group_name)
 
     pdf_links = []
     for a_tag in soup.find_all('a', href=True):
@@ -39,7 +120,7 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
         if '.pdf' in href:
             text = a_tag.text.strip()
             text_upper = text.upper()
-            group_upper = group_name.upper()
+            group_upper = clean_group.upper()
 
             if 'ГРУПИ' in text_upper:
                 if group_upper in text_upper:
@@ -62,6 +143,8 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
 
     table = soup.find('table', id='ScheduleWeek')
     if not table:
+        for pdf in pdf_links:
+            schedule.append({'time': '📄 PDF', 'name': f"<a href='{pdf['url']}'>{pdf['name']}</a>", 'is_pdf': True})
         return schedule
 
     grid = {}
@@ -73,8 +156,8 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
             while grid.get((r_idx, col_idx)) is not None:
                 col_idx += 1
 
-            rowspan = int(cell.get('rowspan', 1))
-            colspan = int(cell.get('colspan', 1))
+            rowspan = int(cell.get('rowspan', '1'))
+            colspan = int(cell.get('colspan', '1'))
 
             for r in range(rowspan):
                 for c in range(colspan):
@@ -143,7 +226,7 @@ async def parse_schedule_for_tomorrow(group_name: str) -> list:
 
 async def parse_schedule_for_today(group_name: str) -> list:
     """
-    Отримує розклад на сьогодні (потрібно для вранішніх нагадувань у scheduler.py).
+    Отримує розклад на сьогодні.
     """
     html = await fetch_schedule_html(group_name)
     today = datetime.now()
@@ -154,7 +237,8 @@ async def check_schedule_changes(group_name: str) -> bool:
     """
     Перевіряє, чи змінився розклад для конкретної групи.
     """
-    html = await fetch_schedule_html(group_name)
+    clean_group = sanitize_group(group_name)
+    html = await fetch_schedule_html(clean_group)
     if not html:
         return False
 
@@ -175,15 +259,15 @@ async def check_schedule_changes(group_name: str) -> bool:
         except json.JSONDecodeError:
             pass
 
-    previous_hash = hashes.get(group_name)
+    previous_hash = hashes.get(clean_group)
 
     if previous_hash and previous_hash != current_hash:
-        hashes[group_name] = current_hash
+        hashes[clean_group] = current_hash
         with open(HASHES_FILE, 'w', encoding='utf-8') as f:
             json.dump(hashes, f)
         return True
     elif not previous_hash:
-        hashes[group_name] = current_hash
+        hashes[clean_group] = current_hash
         os.makedirs(os.path.dirname(HASHES_FILE), exist_ok=True)
         with open(HASHES_FILE, 'w', encoding='utf-8') as f:
             json.dump(hashes, f)
