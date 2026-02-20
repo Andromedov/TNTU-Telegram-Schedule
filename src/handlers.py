@@ -117,7 +117,7 @@ async def process_show_today(callback: CallbackQuery):
         for item in schedule:
             if item.get('is_pdf'):
                 if not has_pdf:
-                    text += "\n" + f"<s>{"—" * 25}</s>" + "\n\n"
+                    text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
                     has_pdf = True
                 text += f"<b>{item['time']}</b> - {item['name']}\n"
             else:
