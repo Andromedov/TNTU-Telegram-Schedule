@@ -94,19 +94,26 @@ async def process_any_text(message: Message):
 async def process_show_today(callback: CallbackQuery):
     user = await db.get_user(callback.from_user.id)
     if not user or not user['group_name']:
-        await callback.answer(get_msg("need_group", "Спочатку вкажіть групу!"), show_alert=True)
+        await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
         return
 
-    await callback.message.edit_text(get_msg("loading_schedule", "⏳ Завантажую розклад на сьогодні..."))
+    await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад на сьогодні..."))
 
     schedule = await scraper.parse_schedule_for_today(user['group_name'])
 
     if not schedule:
-        text = get_msg("no_classes_today", "🏖 <b>На сьогодні пар немає</b> (або розклад не знайдено).")
+        text = get_msg("schedule.no_classes_today", "🏖 <b>На сьогодні пар немає</b> (або розклад не знайдено).")
     else:
-        text = get_msg("today_schedule_title", "📅 <b>Розклад на сьогодні ({group}):</b>\n\n", group=user['group_name'])
+        text = get_msg("schedule.today_title", "📅 <b>Розклад на сьогодні ({group}):</b>\n\n", group=user['group_name'])
+        has_pdf = False
         for item in schedule:
-            text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+            if item.get('is_pdf'):
+                if not has_pdf:
+                    text += "\n" + f"<s>{"—" * 25}</s>" + "\n\n"
+                    has_pdf = True
+                text += f"<b>{item['time']}</b> - {item['name']}\n"
+            else:
+                text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
     await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True,
                                      reply_markup=get_main_keyboard())

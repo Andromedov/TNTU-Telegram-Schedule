@@ -207,7 +207,7 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
 
     for pdf in pdf_links:
         schedule.append({
-            'time': '📄 PDF Розклад',
+            'time': '📄 PDF',
             'name': f"<a href='{pdf['url']}'>{pdf['name']}</a>",
             'is_pdf': True
         })
