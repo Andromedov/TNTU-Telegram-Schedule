@@ -59,6 +59,14 @@ async def cmd_start(message: Message, state: FSMContext):
                              parse_mode="HTML",
                              reply_markup=get_main_keyboard())
 
+@router.message(Command("settings"))
+async def cmd_settings(message: Message):
+    user = await db.get_user(message.from_user.id)
+    if not user or not user['group_name']:
+        await message.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"))
+        return
+    await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"), parse_mode="HTML", reply_markup=get_settings_keyboard(user))
+
 
 @router.message(UserState.waiting_for_group)
 async def process_group_name_fsm(message: Message, state: FSMContext):
