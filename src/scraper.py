@@ -26,9 +26,8 @@ async def fetch_schedule_html(group_name: str) -> str:
         return None
 
 
-async def parse_schedule_for_tomorrow(group_name: str) -> list:
-    """Парсить HTML і повертає розклад на завтра."""
-    html = await fetch_schedule_html(group_name)
+async def _extract_schedule_from_html(html: str, group_name: str, target_date: datetime) -> list:
+    """Внутрішня функція для парсингу HTML (звичайні пари + потрібні PDF) на певну дату."""
     if not html:
         return []
 
@@ -36,16 +35,27 @@ async def parse_schedule_for_tomorrow(group_name: str) -> list:
 
     pdf_links = []
     for a_tag in soup.find_all('a', href=True):
-        if '.pdf' in a_tag['href'].lower() and ('розклад' in a_tag.text.lower() or 'rozklad' in a_tag['href'].lower()):
-            full_link = a_tag['href']
-            if not full_link.startswith('http'):
-                full_link = f"https://tntu.edu.ua/{full_link}"
-            pdf_links.append({'name': a_tag.text.strip(), 'url': full_link})
+        href = a_tag['href'].lower()
+        if '.pdf' in href:
+            text = a_tag.text.strip()
+            text_upper = text.upper()
+            group_upper = group_name.upper()
+
+            if 'ГРУПИ' in text_upper:
+                if group_upper in text_upper:
+                    full_link = a_tag['href']
+                    if not full_link.startswith('http'):
+                        full_link = f"https://tntu.edu.ua/{full_link}"
+                    pdf_links.append({'name': text, 'url': full_link})
+            elif 'ГРАФІК' in text_upper or 'РОЗКЛАД' in text_upper:
+                full_link = a_tag['href']
+                if not full_link.startswith('http'):
+                    full_link = f"https://tntu.edu.ua/{full_link}"
+                pdf_links.append({'name': text, 'url': full_link})
 
     schedule = []
 
-    tomorrow = datetime.now() + timedelta(days=1)
-    weekday = tomorrow.weekday()
+    weekday = target_date.weekday()
 
     if weekday > 4:
         return schedule
@@ -120,6 +130,24 @@ async def parse_schedule_for_tomorrow(group_name: str) -> list:
         })
 
     return schedule
+
+
+async def parse_schedule_for_tomorrow(group_name: str) -> list:
+    """
+    Отримує розклад на завтра.
+    """
+    html = await fetch_schedule_html(group_name)
+    tomorrow = datetime.now() + timedelta(days=1)
+    return await _extract_schedule_from_html(html, group_name, tomorrow)
+
+
+async def parse_schedule_for_today(group_name: str) -> list:
+    """
+    Отримує розклад на сьогодні (потрібно для вранішніх нагадувань у scheduler.py).
+    """
+    html = await fetch_schedule_html(group_name)
+    today = datetime.now()
+    return await _extract_schedule_from_html(html, group_name, today)
 
 
 async def check_schedule_changes(group_name: str) -> bool:
