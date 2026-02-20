@@ -2,17 +2,12 @@ import aiohttp
 from bs4 import BeautifulSoup
 import logging
 
-# УВАГА: Оскільки структура сайту ТНТУ може змінюватись, цей код є базовим каркасом.
-# Вам потрібно буде проінспектувати HTML сторінки розкладу (F12 у браузері)
-# та адаптувати селектори BeautifulSoup (find, find_all).
-
-TNTU_SCHEDULE_URL = "https://tntu.edu.ua/?p=uk/schedule"  # Замініть на реальний URL
+TNTU_SCHEDULE_URL = "https://tntu.edu.ua/?p=uk/schedule&s=fis-sts21"
 
 
 async def fetch_schedule_html(group_name: str) -> str:
     """Асинхронно завантажує сторінку розкладу для певної групи."""
     try:
-        # Можливо, потрібно передавати group_name як GET параметр або POST payload
         params = {'group': group_name}
         async with aiohttp.ClientSession() as session:
             async with session.get(TNTU_SCHEDULE_URL, params=params) as response:
