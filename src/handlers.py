@@ -18,9 +18,9 @@ class UserState(StatesGroup):
 def get_main_keyboard() -> InlineKeyboardMarkup:
     """Головне меню бота."""
     kb = [
-        [InlineKeyboardButton(text=get_msg('kb_show_today', "📅 Розклад на сьогодні"), callback_data="show_today")],
-        [InlineKeyboardButton(text=get_msg('kb_settings', "⚙️ Налаштування"), callback_data="show_settings")],
-        [InlineKeyboardButton(text=get_msg('kb_change_group', "🔄 Змінити групу"), callback_data="change_group")]
+        [InlineKeyboardButton(text=get_msg('keyboard.show_today', "📅 Розклад на сьогодні"), callback_data="show_today")],
+        [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
+        [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"), callback_data="change_group")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -28,18 +28,18 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
 def get_settings_keyboard(user_data) -> InlineKeyboardMarkup:
     kb = [
         [InlineKeyboardButton(
-            text=f"{'✅' if user_data['notify_10_min'] else '❌'} {get_msg('kb_10_min')}",
+            text=f"{'✅' if user_data['notify_10_min'] else '❌'} {get_msg('keyboard.10_min', 'Нагадування за 10 хв')}",
             callback_data="toggle_10_min"
         )],
         [InlineKeyboardButton(
-            text=f"{'✅' if user_data['notify_evening'] else '❌'} {get_msg('kb_evening')}",
+            text=f"{'✅' if user_data['notify_evening'] else '❌'} {get_msg('keyboard.evening', 'Розклад ввечері')}",
             callback_data="toggle_evening"
         )],
         [InlineKeyboardButton(
-            text=f"{'⏸' if user_data['is_paused'] else '▶️'} {get_msg('kb_pause')}",
+            text=f"{'⏸' if user_data['is_paused'] else '▶️'} {get_msg('keyboard.pause', 'Пауза сповіщень')}",
             callback_data="toggle_pause"
         )],
-        [InlineKeyboardButton(text=get_msg('kb_back', "🔙 Назад до меню"), callback_data="back_to_main")]
+        [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -50,11 +50,11 @@ async def cmd_start(message: Message, state: FSMContext):
 
     if not user or not user['group_name']:
         await db.add_or_update_user(message.from_user.id)
-        await message.answer(get_msg("start_greeting_new",
+        await message.answer(get_msg("start.greeting_new",
                                      "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
     else:
-        await message.answer(get_msg("start_greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
+        await message.answer(get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
                                      name=message.from_user.first_name, group=user['group_name']),
                              parse_mode="HTML",
                              reply_markup=get_main_keyboard())
@@ -65,19 +65,19 @@ async def process_group_name_fsm(message: Message, state: FSMContext):
     group_name = message.text.upper().strip()
 
     processing_msg = await message.answer(
-        get_msg("checking_group", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name), parse_mode="HTML")
+        get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name), parse_mode="HTML")
 
     is_valid = await scraper.check_group_exists(group_name)
 
     if is_valid:
         await db.add_or_update_user(message.from_user.id, group_name)
         await processing_msg.edit_text(
-            get_msg("group_saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
+            get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
             parse_mode="HTML",
             reply_markup=get_main_keyboard())
         await state.clear()
     else:
-        await processing_msg.edit_text(get_msg("group_not_found",
+        await processing_msg.edit_text(get_msg("group.not_found",
                                                "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
                                                group=group_name), parse_mode="HTML")
 
@@ -85,7 +85,7 @@ async def process_group_name_fsm(message: Message, state: FSMContext):
 @router.message(F.text)
 async def process_any_text(message: Message):
     """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи."""
-    await message.answer(get_msg("use_menu",
+    await message.answer(get_msg("start.use_menu",
                                  "Для взаємодії використовуйте меню нижче. Якщо хочете змінити групу, натисніть 'Змінити групу'."),
                          reply_markup=get_main_keyboard())
 
@@ -123,14 +123,14 @@ async def process_show_today(callback: CallbackQuery):
 @router.callback_query(F.data == "show_settings")
 async def process_show_settings(callback: CallbackQuery):
     user = await db.get_user(callback.from_user.id)
-    await callback.message.edit_text(get_msg("settings_title", "⚙️ <b>Налаштування сповіщень:</b>"), parse_mode="HTML",
+    await callback.message.edit_text(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"), parse_mode="HTML",
                                      reply_markup=get_settings_keyboard(user))
     await callback.answer()
 
 
 @router.callback_query(F.data == "change_group")
 async def process_change_group(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(get_msg("ask_new_group", "Введіть нову назву групи (наприклад, СТс-21):"))
+    await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
     await state.set_state(UserState.waiting_for_group)
     await callback.answer()
 
@@ -139,7 +139,7 @@ async def process_change_group(callback: CallbackQuery, state: FSMContext):
 async def process_back_to_main(callback: CallbackQuery):
     user = await db.get_user(callback.from_user.id)
     await callback.message.edit_text(
-        get_msg("main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>", group=user['group_name']),
+        get_msg("start.main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>", group=user['group_name']),
         parse_mode="HTML",
         reply_markup=get_main_keyboard())
     await callback.answer()
@@ -163,4 +163,4 @@ async def process_toggle(callback: CallbackQuery):
 
     updated_user = await db.get_user(user_id)
     await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(updated_user))
-    await callback.answer(get_msg("settings_updated", "Налаштування оновлено!"))
+    await callback.answer(get_msg("settings.updated", "Налаштування оновлено!"))
