@@ -106,6 +106,28 @@ async def check_group_exists(group_name: str) -> bool:
     return False
 
 
+def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
+    """Визначає, який тиждень (1 чи 2) буде в цільову дату."""
+    h3_black = soup.find('h3', class_='Black')
+    current_week = 1
+    if h3_black:
+        text = h3_black.text.lower()
+        if 'другий' in text:
+            current_week = 2
+        elif 'перший' in text:
+            current_week = 1
+
+    today = datetime.now()
+    today_monday = today.date() - timedelta(days=today.weekday())
+    target_monday = target_date.date() - timedelta(days=target_date.weekday())
+    weeks_diff = (target_monday - today_monday).days // 7
+
+    if weeks_diff % 2 != 0:
+        return 2 if current_week == 1 else 1
+
+    return current_week
+
+
 async def _extract_schedule_from_html(html: str, group_name: str, target_date: datetime) -> list:
     """Внутрішня функція для парсингу HTML (звичайні пари + потрібні PDF) на певну дату."""
     if not html:
@@ -113,6 +135,8 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
 
     soup = BeautifulSoup(html, 'html.parser')
     clean_group = sanitize_group(group_name)
+
+    target_week = _get_target_week(soup, target_date)
 
     pdf_links = []
     for a_tag in soup.find_all('a', href=True):
@@ -167,15 +191,26 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
     target_col = weekday + 1
     processed_cells = set()
 
+    time_to_rows = {}
     for r_idx in range(1, len(rows)):
         time_cell = grid.get((r_idx, 0))
-        target_cell = grid.get((r_idx, target_col))
+        if time_cell:
+            if time_cell not in time_to_rows:
+                time_to_rows[time_cell] = []
+            if r_idx not in time_to_rows[time_cell]:
+                time_to_rows[time_cell].append(r_idx)
 
-        if not time_cell or not target_cell:
+    for time_cell, indices in time_to_rows.items():
+        if len(indices) >= 2:
+            active_r_idx = indices[0] if target_week == 1 else indices[1]
+        else:
+            active_r_idx = indices[0]
+
+        target_cell = grid.get((active_r_idx, target_col))
+
+        if not target_cell or target_cell in processed_cells:
             continue
 
-        if target_cell in processed_cells:
-            continue
         processed_cells.add(target_cell)
 
         time_div = time_cell.find('div', class_='LessonPeriod')
