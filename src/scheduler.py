@@ -35,7 +35,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     users = await db.get_active_users()
     for user in users:
         if user['notify_10_min'] and user['group_name']:
-            schedule = await scraper.parse_schedle_for_tomorrow(user['group_name'])
+            schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
 
             for item in schedule:
                 if item.get('is_pdf', False):
