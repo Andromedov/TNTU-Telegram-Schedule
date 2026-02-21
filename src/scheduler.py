@@ -14,7 +14,7 @@ async def send_evening_schedule(bot: Bot):
         if user['notify_evening'] and user['group_name']:
             schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
             if schedule:
-                text = get_msg("evening_schedule_title") + "\n"
+                text = get_msg("schedule.evening_title") + "\n"
                 for item in schedule:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
                 try:
@@ -26,7 +26,7 @@ async def send_evening_schedule(bot: Bot):
 async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str):
     """Відправляє нагадування про конкретну пару."""
     try:
-        await bot.send_message(user_id, get_msg("reminder_10_min", subject_name=subject_name), parse_mode="HTML")
+        await bot.send_message(user_id, get_msg("reminders.10_min", subject_name=subject_name), parse_mode="HTML")
     except Exception as e:
         logging.error(f"Помилка відправки нагадування: {e}")
 
@@ -73,7 +73,7 @@ async def check_schedule_updates_task(bot: Bot):
         if has_changes:
             for uid in user_ids:
                 try:
-                    await bot.send_message(uid, get_msg("schedule_changed"))
+                    await bot.send_message(uid, get_msg("schedule.changed"))
                 except:
                     pass
 

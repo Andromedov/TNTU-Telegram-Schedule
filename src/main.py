@@ -22,7 +22,7 @@ async def main():
     scheduler = setup_scheduler(bot)
     scheduler.start()
 
-    logging.info(get_msg("bot_started_log"))
+    logging.info(get_msg("bot.started", "Бот запущено!"))
 
     try:
         await dp.start_polling(bot)
