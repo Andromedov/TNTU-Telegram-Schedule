@@ -40,19 +40,22 @@ def _transliterate_for_url(text: str) -> str:
 async def fetch_schedule_html(group_name: str) -> str:
     """Асинхронно завантажує сторінку розкладу для певної групи."""
     clean_group = sanitize_group(group_name)
+    clean_group_upper = clean_group.upper()
 
     try:
         async with aiohttp.ClientSession() as session:
             params = {'p': 'uk/schedule'}
-            data = {'group': clean_group}
+            data = {'group': group_name}
 
             async with session.post(TNTU_SCHEDULE_URL, params=params, data=data) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    if soup.find('table', id='ScheduleWeek') or soup.find('h2', string=lambda
-                            s: s and clean_group.upper() in s.upper()):
+                    if soup.find('table', id='ScheduleWeek'):
                         return html
+                    for h2 in soup.find_all('h2'):
+                        if clean_group_upper in sanitize_group(h2.text).upper():
+                            return html
 
             group_translit = _transliterate_for_url(clean_group)
             faculties = ['fis', 'fpt', 'fmt', 'fem']
@@ -64,17 +67,21 @@ async def fetch_schedule_html(group_name: str) -> str:
                     if response.status == 200:
                         html = await response.text()
                         soup = BeautifulSoup(html, 'html.parser')
-                        if soup.find('table', id='ScheduleWeek') or soup.find('h2', string=lambda
-                                s: s and clean_group.upper() in s.upper()):
+                        if soup.find('table', id='ScheduleWeek'):
                             return html
+                        for h2 in soup.find_all('h2'):
+                            if clean_group_upper in sanitize_group(h2.text).upper():
+                                return html
 
             async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     for a_tag in soup.find_all('a', href=True):
-                        if '.pdf' in a_tag['href'].lower() and clean_group.upper() in a_tag.text.upper():
-                            return html
+                        if '.pdf' in a_tag['href'].lower():
+                            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ')
+                            if clean_group_upper in safe_text:
+                                return html
 
             return None
     except Exception as e:
@@ -84,8 +91,8 @@ async def fetch_schedule_html(group_name: str) -> str:
 
 async def check_group_exists(group_name: str) -> bool:
     """Перевіряє, чи існує група на сайті ТНТУ."""
-    clean_group = sanitize_group(group_name)
-    html = await fetch_schedule_html(clean_group)
+    clean_group = sanitize_group(group_name).upper()
+    html = await fetch_schedule_html(group_name)
     if not html:
         return False
 
@@ -96,12 +103,14 @@ async def check_group_exists(group_name: str) -> bool:
 
     headers = soup.find_all('h2')
     for header in headers:
-        if clean_group.upper() in header.text.upper():
+        if clean_group in sanitize_group(header.text).upper():
             return True
 
     for a_tag in soup.find_all('a', href=True):
-        if '.pdf' in a_tag['href'].lower() and clean_group.upper() in a_tag.text.upper():
-            return True
+        if '.pdf' in a_tag['href'].lower():
+            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ')
+            if clean_group in safe_text:
+                return True
 
     return False
 
@@ -134,8 +143,7 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
         return []
 
     soup = BeautifulSoup(html, 'html.parser')
-    clean_group = sanitize_group(group_name)
-
+    clean_group = sanitize_group(group_name).upper()
     target_week = _get_target_week(soup, target_date)
 
     pdf_links = []
@@ -144,10 +152,9 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
         if '.pdf' in href:
             raw_text = a_tag.text.strip()
             text_upper = sanitize_group(raw_text).upper().replace('\xa0', ' ')
-            group_upper = clean_group.upper()
 
             if 'ГРУПИ' in text_upper:
-                if group_upper in text_upper:
+                if clean_group in text_upper:
                     full_link = a_tag['href']
                     if not full_link.startswith('http'):
                         full_link = f"https://tntu.edu.ua/{full_link}"
