@@ -42,6 +42,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
     """Асинхронно завантажує сторінку розкладу для певної групи."""
     clean_group = sanitize_group(group_name)
     clean_group_upper = clean_group.upper()
+    clean_group_no_hyphen = clean_group_upper.replace('-', '')
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -55,7 +56,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
                     if soup.find('table', id='ScheduleWeek'):
                         return html
                     for h2 in soup.find_all('h2'):
-                        if clean_group_upper in sanitize_group(h2.text).upper():
+                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
                             return html
 
             group_translit = _transliterate_for_url(clean_group)
@@ -71,7 +72,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
                         if soup.find('table', id='ScheduleWeek'):
                             return html
                         for h2 in soup.find_all('h2'):
-                            if clean_group_upper in sanitize_group(h2.text).upper():
+                            if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
                                 return html
 
             async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as response:
@@ -80,8 +81,8 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
                     soup = BeautifulSoup(html, 'html.parser')
                     for a_tag in soup.find_all('a', href=True):
                         if '.pdf' in a_tag['href'].lower():
-                            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ')
-                            if clean_group_upper in safe_text:
+                            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ').replace('-', '')
+                            if clean_group_no_hyphen in safe_text:
                                 return html
 
             return None
@@ -93,6 +94,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
 async def check_group_exists(group_name: str) -> bool:
     """Перевіряє, чи існує група на сайті ТНТУ."""
     clean_group = sanitize_group(group_name).upper()
+    clean_group_no_hyphen = clean_group.replace('-', '')
     html = await fetch_schedule_html(group_name)
     if not html:
         return False
@@ -104,13 +106,13 @@ async def check_group_exists(group_name: str) -> bool:
 
     headers = soup.find_all('h2')
     for header in headers:
-        if clean_group in sanitize_group(header.text).upper():
+        if clean_group_no_hyphen in sanitize_group(header.text).upper().replace('-', ''):
             return True
 
     for a_tag in soup.find_all('a', href=True):
         if '.pdf' in a_tag['href'].lower():
-            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ')
-            if clean_group in safe_text:
+            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ').replace('-', '')
+            if clean_group_no_hyphen in safe_text:
                 return True
 
     return False
@@ -145,6 +147,7 @@ async def _extract_schedule_from_html(html: Optional[str], group_name: str, targ
 
     soup = BeautifulSoup(html, 'html.parser')
     clean_group = sanitize_group(group_name).upper()
+    group_search = clean_group.replace('-', '')
     target_week = _get_target_week(soup, target_date)
 
     pdf_links = []
@@ -153,9 +156,10 @@ async def _extract_schedule_from_html(html: Optional[str], group_name: str, targ
         if '.pdf' in href:
             raw_text = a_tag.text.strip()
             text_upper = sanitize_group(raw_text).upper().replace('\xa0', ' ')
+            text_search = text_upper.replace('-', '')
 
             if 'ГРУПИ' in text_upper:
-                if clean_group in text_upper:
+                if group_search in text_search:
                     full_link = a_tag['href']
                     if not full_link.startswith('http'):
                         full_link = f"https://tntu.edu.ua/{full_link}"
@@ -171,6 +175,8 @@ async def _extract_schedule_from_html(html: Optional[str], group_name: str, targ
     weekday = target_date.weekday()
 
     if weekday > 4:
+        for pdf in pdf_links:
+            schedule.append({'time': '📄 PDF', 'name': f"<a href='{pdf['url']}'>{pdf['name']}</a>", 'is_pdf': True})
         return schedule
 
     table = soup.find('table', id='ScheduleWeek')
@@ -291,12 +297,11 @@ async def check_schedule_changes(group_name: str) -> bool:
     if not table:
         return False
 
-    for tag in table.find_all(True):
-        if 'class' in tag.attrs:
-            del tag.attrs['class']
+    for el in table.find_all(['h2', 'h3']):
+        el.decompose()
 
-    table_html = str(table)
-    current_hash = hashlib.md5(table_html.encode('utf-8')).hexdigest()
+    table_text = table.get_text(strip=True)
+    current_hash = hashlib.md5(table_text.encode('utf-8')).hexdigest()
 
     hashes = {}
     if os.path.exists(HASHES_FILE):
