@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 import os
+from typing import Optional
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 HASHES_FILE = "data/schedule_hashes.json"
 
 
 def sanitize_group(group_name: str) -> str:
-    """Замінює візуально схожі англійські літери на українські для уникнення помилок вводу."""
+    """Замінює візуально схожі англійські літери на українські для уникнення помилок уводу."""
     mapping = {
         'A': 'А', 'a': 'а', 'B': 'В', 'C': 'С', 'c': 'с', 'E': 'Е', 'e': 'е',
         'H': 'Н', 'I': 'І', 'i': 'і', 'K': 'К', 'k': 'к', 'M': 'М', 'm': 'м',
@@ -37,7 +38,7 @@ def _transliterate_for_url(text: str) -> str:
     return res
 
 
-async def fetch_schedule_html(group_name: str) -> str:
+async def fetch_schedule_html(group_name: str) -> Optional[str]:
     """Асинхронно завантажує сторінку розкладу для певної групи."""
     clean_group = sanitize_group(group_name)
     clean_group_upper = clean_group.upper()
@@ -137,7 +138,7 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     return current_week
 
 
-async def _extract_schedule_from_html(html: str, group_name: str, target_date: datetime) -> list:
+async def _extract_schedule_from_html(html: Optional[str], group_name: str, target_date: datetime) -> list:
     """Парсить HTML (звичайні пари + потрібні PDF) на певну дату."""
     if not html:
         return []
