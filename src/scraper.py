@@ -38,7 +38,7 @@ def _transliterate_for_url(text: str) -> str:
 
 
 async def fetch_schedule_html(group_name: str) -> str:
-    """Асинхронно завантажує сторінку розкладу для певної групи (з розумним пошуком)."""
+    """Асинхронно завантажує сторінку розкладу для певної групи."""
     clean_group = sanitize_group(group_name)
 
     try:
@@ -129,7 +129,7 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
 
 
 async def _extract_schedule_from_html(html: str, group_name: str, target_date: datetime) -> list:
-    """Внутрішня функція для парсингу HTML (звичайні пари + потрібні PDF) на певну дату."""
+    """Парсить HTML (звичайні пари + потрібні PDF) на певну дату."""
     if not html:
         return []
 
@@ -142,8 +142,8 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
     for a_tag in soup.find_all('a', href=True):
         href = a_tag['href'].lower()
         if '.pdf' in href:
-            text = a_tag.text.strip()
-            text_upper = text.upper()
+            raw_text = a_tag.text.strip()
+            text_upper = sanitize_group(raw_text).upper().replace('\xa0', ' ')
             group_upper = clean_group.upper()
 
             if 'ГРУПИ' in text_upper:
@@ -151,12 +151,12 @@ async def _extract_schedule_from_html(html: str, group_name: str, target_date: d
                     full_link = a_tag['href']
                     if not full_link.startswith('http'):
                         full_link = f"https://tntu.edu.ua/{full_link}"
-                    pdf_links.append({'name': text, 'url': full_link})
+                    pdf_links.append({'name': raw_text, 'url': full_link})
             elif 'ГРАФІК' in text_upper or 'РОЗКЛАД' in text_upper:
                 full_link = a_tag['href']
                 if not full_link.startswith('http'):
                     full_link = f"https://tntu.edu.ua/{full_link}"
-                pdf_links.append({'name': text, 'url': full_link})
+                pdf_links.append({'name': raw_text, 'url': full_link})
 
     schedule = []
 
@@ -282,6 +282,10 @@ async def check_schedule_changes(group_name: str) -> bool:
 
     if not table:
         return False
+
+    for tag in table.find_all(True):
+        if 'class' in tag.attrs:
+            del tag.attrs['class']
 
     table_html = str(table)
     current_hash = hashlib.md5(table_html.encode('utf-8')).hexdigest()
