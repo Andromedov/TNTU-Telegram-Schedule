@@ -15,8 +15,15 @@ async def send_evening_schedule(bot: Bot):
             schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
             if schedule:
                 text = get_msg("schedule.evening_title") + "\n"
+                has_pdf = False
                 for item in schedule:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    if item.get('is_pdf'):
+                        if not has_pdf:
+                            text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
+                            has_pdf = True
+                        text += f"📄 {item['name']}\n"
+                    else:
+                        text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
                 try:
                     await bot.send_message(user['user_id'], text, parse_mode="HTML", disable_web_page_preview=True)
                 except Exception as e:
@@ -35,7 +42,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     users = await db.get_active_users()
     for user in users:
         if user['notify_10_min'] and user['group_name']:
-            schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
+            schedule = await scraper.parse_schedule_for_today(user['group_name'])
 
             for item in schedule:
                 if item.get('is_pdf', False):
