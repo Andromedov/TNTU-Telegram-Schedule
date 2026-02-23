@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from datetime import datetime, timedelta
 
 import database as db
 import scraper
@@ -20,9 +21,7 @@ class ScheduleBotHandlers:
 
     @staticmethod
     def get_bot_commands() -> list[BotCommand]:
-        """
-        Повертає список команд для автоматичного встановлення меню бота в Telegram.
-        """
+        """Повертає список команд для автоматичного встановлення меню бота в Telegram."""
         return [
             BotCommand(command="start", description=get_msg('commands.start', "Головне меню бота")),
             BotCommand(command="settings", description=get_msg('commands.settings', "Налаштування сповіщень"))
@@ -36,8 +35,9 @@ class ScheduleBotHandlers:
     def get_main_keyboard() -> InlineKeyboardMarkup:
         """Головне меню бота."""
         kb = [
-            [InlineKeyboardButton(text=get_msg('keyboard.show_today', "📅 Розклад на сьогодні"),
-                                  callback_data="show_today")],
+            # Запускаємо навігацію з відступом 0 (сьогодні)
+            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
+                                  callback_data="nav_schedule:0")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
                                   callback_data="change_group")]
@@ -69,10 +69,14 @@ class ScheduleBotHandlers:
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_schedule_keyboard() -> InlineKeyboardMarkup:
-        """Меню під розкладом."""
+    def get_schedule_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
+        """Клавіатура для навігації по днях."""
         kb = [
-            [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
+            [
+                InlineKeyboardButton(text="⬅️", callback_data=f"nav_schedule:{offset - 1}"),
+                InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main"),
+                InlineKeyboardButton(text="➡️", callback_data=f"nav_schedule:{offset + 1}")
+            ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -173,21 +177,38 @@ class ScheduleBotHandlers:
     #            ОБРОБНИКИ КОЛБЕКІВ
     # ==========================================
 
-    async def process_show_today(self, callback: CallbackQuery):
+    async def process_nav_schedule(self, callback: CallbackQuery):
+        """Обробник динамічного графіка розкладу з гортанням по днях."""
         user = await db.get_user(callback.from_user.id)
         if not user or not user['group_name']:
             await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
             return
 
-        await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад на сьогодні..."))
+        # Отримуємо зміщення у днях (offset)
+        offset = int(callback.data.split(":")[1])
+        target_date = datetime.now() + timedelta(days=offset)
 
-        schedule = await scraper.parse_schedule_for_today(user['group_name'])
+        await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад..."))
+
+        schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
+
+        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        day_name = weekdays[target_date.weekday()]
+        date_str = target_date.strftime("%d.%m.%Y")
+
+        relative_day = ""
+        if offset == 0:
+            relative_day = " (Сьогодні)"
+        elif offset == 1:
+            relative_day = " (Завтра)"
+        elif offset == -1:
+            relative_day = " (Вчора)"
+
+        text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
 
         if not schedule:
-            text = get_msg("schedule.no_classes_today", "🏖 <b>На сьогодні пар немає</b> (або розклад не знайдено).")
+            text += get_msg("schedule.no_classes_today", "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).")
         else:
-            text = get_msg("schedule.today_title", "📅 <b>Розклад на сьогодні ({group}):</b>\n\n",
-                           group=user['group_name'])
             has_pdf = False
             for item in schedule:
                 if item.get('is_pdf'):
@@ -198,8 +219,12 @@ class ScheduleBotHandlers:
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
-        await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True,
-                                         reply_markup=self.get_schedule_keyboard())
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=self.get_schedule_nav_keyboard(offset)
+        )
         await callback.answer()
 
     async def process_show_settings(self, callback: CallbackQuery):
@@ -212,7 +237,7 @@ class ScheduleBotHandlers:
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
-        await state.update_data(prompt_msg_id=callback.message.message_id)  # Зберігаємо ID для подальшого редагування
+        await state.update_data(prompt_msg_id=callback.message.message_id)
         await callback.answer()
 
     async def process_back_to_main(self, callback: CallbackQuery):
@@ -260,7 +285,7 @@ class ScheduleBotHandlers:
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
 
         # Колбеки (кнопки)
-        self.router.callback_query.register(self.process_show_today, F.data == "show_today")
+        self.router.callback_query.register(self.process_nav_schedule, F.data.startswith("nav_schedule:"))
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
