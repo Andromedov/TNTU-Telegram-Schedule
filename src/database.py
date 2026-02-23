@@ -1,25 +1,43 @@
 import aiosqlite
 from config import DB_PATH
 import os
+import logging
+
+EXPECTED_COLUMNS = {
+    'group_name': 'TEXT',
+    'notify_10_min': 'BOOLEAN DEFAULT 1',
+    'notify_evening': 'BOOLEAN DEFAULT 1',
+    'is_paused': 'BOOLEAN DEFAULT 0',
+    'notify_schedule_update': 'BOOLEAN DEFAULT 1'
+}
+
 
 async def init_db():
-    """Ініціалізація бази даних та створення таблиць, якщо їх немає."""
+    """Ініціалізація БД та автоматична міграція колонок."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                group_name TEXT,
-                notify_10_min BOOLEAN DEFAULT 1,
-                notify_evening BOOLEAN DEFAULT 1,
-                is_paused BOOLEAN DEFAULT 0
+         CREATE TABLE IF NOT EXISTS users
+            (
+                user_id
+                INTEGER
+                PRIMARY
+                KEY
             )
         """)
 
-        try:
-            await db.execute("ALTER TABLE users ADD COLUMN notify_schedule_update BOOLEAN DEFAULT 1")
-        except:
-            pass
+        db.row_factory = aiosqlite.Row
+        async with db.execute("PRAGMA table_info(users)") as cursor:
+            columns = await cursor.fetchall()
+            existing_columns = [col['name'] for col in columns]
+
+        for col_name, col_type in EXPECTED_COLUMNS.items():
+            if col_name not in existing_columns:
+                try:
+                    await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                    logging.info(f"База даних: Додано нову колонку '{col_name}'")
+                except Exception as e:
+                    logging.error(f"Помилка створення колонки {col_name}: {e}")
 
         await db.commit()
 
@@ -42,8 +60,7 @@ async def get_user(user_id: int):
             return await cursor.fetchone()
 
 async def update_setting(user_id: int, setting: str, value: int):
-    allowed_settings = ['notify_10_min', 'notify_evening', 'is_paused', 'notify_schedule_update']
-    if setting not in allowed_settings:
+    if setting not in EXPECTED_COLUMNS:
         return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(f"UPDATE users SET {setting} = ? WHERE user_id = ?", (value, user_id))
