@@ -15,6 +15,12 @@ async def init_db():
                 is_paused BOOLEAN DEFAULT 0
             )
         """)
+
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN notify_schedule_update BOOLEAN DEFAULT 1")
+        except:
+            pass
+
         await db.commit()
 
 async def add_or_update_user(user_id: int, group_name: str = None):
@@ -36,7 +42,7 @@ async def get_user(user_id: int):
             return await cursor.fetchone()
 
 async def update_setting(user_id: int, setting: str, value: int):
-    allowed_settings = ['notify_10_min', 'notify_evening', 'is_paused']
+    allowed_settings = ['notify_10_min', 'notify_evening', 'is_paused', 'notify_schedule_update']
     if setting not in allowed_settings:
         return
     async with aiosqlite.connect(DB_PATH) as db:

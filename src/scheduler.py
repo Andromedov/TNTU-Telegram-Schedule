@@ -70,7 +70,7 @@ async def check_schedule_updates_task(bot: Bot):
     groups = {}
     for user in users:
         g = user['group_name']
-        if g:
+        if g and user.get('notify_schedule_update', 1):
             if g not in groups:
                 groups[g] = []
             groups[g].append(user['user_id'])

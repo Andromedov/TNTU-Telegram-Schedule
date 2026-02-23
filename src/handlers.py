@@ -39,6 +39,10 @@ def get_settings_keyboard(user_data) -> InlineKeyboardMarkup:
             text=f"{'⏸' if user_data['is_paused'] else '▶️'} {get_msg('keyboard.pause', 'Пауза сповіщень')}",
             callback_data="toggle_pause"
         )],
+        [InlineKeyboardButton(
+            text=f"{'✅' if user_data['notify_schedule_update'] else '❌'} {get_msg('keyboard.schedule_update', 'Сповіщення про оновлення розкладу')}",
+            callback_data="toggle_notify_schedule_update"
+        )],
         [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -168,6 +172,9 @@ async def process_toggle(callback: CallbackQuery):
     elif action == "toggle_pause":
         new_val = 0 if user['is_paused'] else 1
         await db.update_setting(user_id, 'is_paused', new_val)
+    elif action == "toggle_notify_schedule_update":
+        new_val = 0 if user['notify_schedule_update'] else 1
+        await db.update_setting(user_id, 'notify_schedule_update', new_val)
 
     updated_user = await db.get_user(user_id)
     await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(updated_user))
