@@ -214,11 +214,11 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
     grid = {}
 
-    rows = [r for r in table.find_all('tr') if r.find_parent('table') == table]
+    rows = [r for r in soup.find_all('tr') if r.find('td')]
 
     for r_idx, row in enumerate(rows):
         col_idx = 0
-        cells = [c for c in row.find_all(['td', 'th']) if c.find_parent('tr') == row]
+        cells = row.find_all('td')
 
         for cell in cells:
             while grid.get((r_idx, col_idx)) is not None:
@@ -273,7 +273,7 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
             subject_name = subject_div.get_text(separator=' ', strip=True)
         else:
             clone = target_cell.copy()
-            for d in clone.find_all('div', class_=['Info', 'Notes', 'LessonType']):
+            for d in clone.find_all(['div', 'span', 'br'], class_=['Info', 'Notes', 'LessonType']):
                 d.decompose()
             text = clone.get_text(separator=' ', strip=True)
             if text:
