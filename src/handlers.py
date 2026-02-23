@@ -68,18 +68,32 @@ class ScheduleBotHandlers:
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
+    @staticmethod
+    def get_schedule_keyboard() -> InlineKeyboardMarkup:
+        """Меню під розкладом."""
+        kb = [
+            [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
     # ==========================================
     #            ОБРОБНИКИ КОМАНД
     # ==========================================
 
     async def cmd_start(self, message: Message, state: FSMContext):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         user = await db.get_user(message.from_user.id)
 
         if not user or not user['group_name']:
             await db.add_or_update_user(message.from_user.id)
-            await message.answer(get_msg("start.greeting_new",
-                                         "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):"))
+            msg = await message.answer(get_msg("start.greeting_new",
+                                               "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):"))
             await state.set_state(UserState.waiting_for_group)
+            await state.update_data(prompt_msg_id=msg.message_id)
         else:
             await message.answer(get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
                                          name=message.from_user.first_name, group=user['group_name']),
@@ -87,6 +101,11 @@ class ScheduleBotHandlers:
                                  reply_markup=self.get_main_keyboard())
 
     async def cmd_settings(self, message: Message):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         user = await db.get_user(message.from_user.id)
         if not user or not user['group_name']:
             await message.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"))
@@ -102,8 +121,28 @@ class ScheduleBotHandlers:
     async def process_group_name_fsm(self, message: Message, state: FSMContext):
         group_name = message.text.upper().strip()
 
-        processing_msg = await message.answer(
-            get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name), parse_mode="HTML")
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        data = await state.get_data()
+        prompt_msg_id = data.get("prompt_msg_id")
+
+        checking_text = get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name)
+
+        if prompt_msg_id:
+            try:
+                processing_msg = await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=prompt_msg_id,
+                    text=checking_text,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                processing_msg = await message.answer(checking_text, parse_mode="HTML")
+        else:
+            processing_msg = await message.answer(checking_text, parse_mode="HTML")
 
         is_valid = await scraper.check_group_exists(group_name)
 
@@ -121,6 +160,11 @@ class ScheduleBotHandlers:
 
     async def process_any_text(self, message: Message):
         """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи."""
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         await message.answer(get_msg("start.use_menu",
                                      "Для взаємодії використовуйте меню нижче. Якщо хочете змінити групу, натисніть 'Змінити групу'."),
                              reply_markup=self.get_main_keyboard())
@@ -155,7 +199,7 @@ class ScheduleBotHandlers:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
         await callback.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True,
-                                         reply_markup=self.get_main_keyboard())
+                                         reply_markup=self.get_schedule_keyboard())
         await callback.answer()
 
     async def process_show_settings(self, callback: CallbackQuery):
@@ -168,6 +212,7 @@ class ScheduleBotHandlers:
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
+        await state.update_data(prompt_msg_id=callback.message.message_id)  # Зберігаємо ID для подальшого редагування
         await callback.answer()
 
     async def process_back_to_main(self, callback: CallbackQuery):
