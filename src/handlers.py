@@ -20,6 +20,16 @@ class ScheduleBotHandlers:
         self.router = router
         self._register_handlers()
 
+    async def _cleanup_old_ui(self, message: Message, state: FSMContext):
+        """Видаляє попереднє повідомлення меню, щоб запобігти спаму."""
+        data = await state.get_data()
+        old_msg_id = data.get("last_ui_msg_id")
+        if old_msg_id:
+            try:
+                await message.bot.delete_message(chat_id=message.chat.id, message_id=old_msg_id)
+            except Exception:
+                pass
+
     @staticmethod
     def get_bot_commands() -> list[BotCommand]:
         """Повертає список команд для автоматичного встановлення меню бота в Telegram."""
@@ -37,7 +47,7 @@ class ScheduleBotHandlers:
         """Головне меню бота."""
         kb = [
             # Запускаємо навігацію з відступом 0 (сьогодні)
-            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад (Графік)"),
+            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
                                   callback_data="nav_schedule:0")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
@@ -89,7 +99,7 @@ class ScheduleBotHandlers:
             [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
             [InlineKeyboardButton(text="🧪 Тест: Нагадування (10 хв)", callback_data="admin_test_reminder")],
             [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
-            [InlineKeyboardButton(text="🔙 Закрити", callback_data="delete_msg")]
+            [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -104,20 +114,24 @@ class ScheduleBotHandlers:
             pass
 
         user = await db.get_user(message.from_user.id)
+        await self._cleanup_old_ui(message, state)
 
         if not user or not user['group_name']:
             await db.add_or_update_user(message.from_user.id)
             msg = await message.answer(get_msg("start.greeting_new",
                                                "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):"))
             await state.set_state(UserState.waiting_for_group)
-            await state.update_data(prompt_msg_id=msg.message_id)
+            await state.update_data(prompt_msg_id=msg.message_id, last_ui_msg_id=msg.message_id)
         else:
-            await message.answer(get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
-                                         name=message.from_user.first_name, group=user['group_name']),
-                                 parse_mode="HTML",
-                                 reply_markup=self.get_main_keyboard())
+            msg = await message.answer(
+                get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
+                        name=message.from_user.first_name, group=user['group_name']),
+                parse_mode="HTML",
+                reply_markup=self.get_main_keyboard()
+            )
+            await state.update_data(last_ui_msg_id=msg.message_id)
 
-    async def cmd_settings(self, message: Message):
+    async def cmd_settings(self, message: Message, state: FSMContext):
         try:
             await message.delete()
         except Exception:
@@ -127,11 +141,15 @@ class ScheduleBotHandlers:
         if not user or not user['group_name']:
             await message.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"))
             return
-        await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
-                             parse_mode="HTML",
-                             reply_markup=self.get_settings_keyboard(user))
 
-    async def cmd_admin(self, message: Message):
+        await self._cleanup_old_ui(message, state)
+
+        msg = await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
+                                   parse_mode="HTML",
+                                   reply_markup=self.get_settings_keyboard(user))
+        await state.update_data(last_ui_msg_id=msg.message_id)
+
+    async def cmd_admin(self, message: Message, state: FSMContext):
         """Відкриває адмін-панель"""
         try:
             await message.delete()
@@ -141,8 +159,11 @@ class ScheduleBotHandlers:
         if not SENIOR_ID or message.from_user.id != SENIOR_ID:
             return
 
-        await message.answer("👑 <b>Адмін Панель</b>\nОберіть дію нижче:", parse_mode="HTML",
-                             reply_markup=self.get_admin_keyboard())
+        await self._cleanup_old_ui(message, state)
+
+        msg = await message.answer("👑 <b>Адмін Панель</b>\nОберіть дію нижче:", parse_mode="HTML",
+                                   reply_markup=self.get_admin_keyboard())
+        await state.update_data(last_ui_msg_id=msg.message_id)
 
     # ==========================================
     #          ОБРОБНИКИ СТАНІВ (FSM)
@@ -182,11 +203,13 @@ class ScheduleBotHandlers:
                 get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
                 parse_mode="HTML",
                 reply_markup=self.get_main_keyboard())
-            await state.clear()
+            await state.set_state(None)
+            await state.update_data(last_ui_msg_id=processing_msg.message_id)
         else:
             await processing_msg.edit_text(get_msg("group.not_found",
                                                    "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
                                                    group=group_name), parse_mode="HTML")
+            await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
     async def process_any_text(self, message: Message):
         """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи."""
@@ -194,10 +217,6 @@ class ScheduleBotHandlers:
             await message.delete()
         except Exception:
             pass
-
-        await message.answer(get_msg("start.use_menu",
-                                     "Для взаємодії використовуйте меню нижче. Якщо хочете змінити групу, натисніть 'Змінити групу'."),
-                             reply_markup=self.get_main_keyboard())
 
     # ==========================================
     #            ОБРОБНИКИ КОЛБЕКІВ
