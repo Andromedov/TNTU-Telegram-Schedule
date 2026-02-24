@@ -198,10 +198,12 @@ class ScheduleBotHandlers:
                         parse_mode="HTML"
                     )
                     return
-                except Exception:
+                except Exception as e:
+                    if "message is not modified" in str(e).lower():
+                        return
                     pass
             new_msg = await message.answer(error_text, parse_mode="HTML")
-            await state.update_data(prompt_msg_id=new_msg.message_id)
+            await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
             return
 
         checking_text = get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name)
@@ -223,16 +225,22 @@ class ScheduleBotHandlers:
 
         if is_valid:
             await db.add_or_update_user(message.from_user.id, group_name)
-            await processing_msg.edit_text(
-                get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
-                parse_mode="HTML",
-                reply_markup=self.get_main_keyboard())
+            try:
+                await processing_msg.edit_text(
+                    get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
+                    parse_mode="HTML",
+                    reply_markup=self.get_main_keyboard())
+            except Exception:
+                pass
             await state.set_state(None)
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
         else:
-            await processing_msg.edit_text(get_msg("group.not_found",
-                                                   "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
-                                                   group=group_name), parse_mode="HTML")
+            try:
+                await processing_msg.edit_text(get_msg("group.not_found",
+                                                       "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
+                                                       group=group_name), parse_mode="HTML")
+            except Exception:
+                pass
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
     async def process_any_text(self, message: Message):
