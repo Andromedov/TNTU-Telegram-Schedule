@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import database as db
 import scraper
 from messages import get_msg
+from config import SENIOR_ID
 
 
 class UserState(StatesGroup):
@@ -18,6 +19,22 @@ class ScheduleBotHandlers:
     def __init__(self, router: Router):
         self.router = router
         self._register_handlers()
+
+    async def _cleanup_old_ui(self, message: Message, state: FSMContext):
+        """Редагує попереднє повідомлення меню, закриваючи його, щоб запобігти спаму."""
+        data = await state.get_data()
+        old_msg_id = data.get("last_ui_msg_id")
+        if old_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=old_msg_id,
+                    text="<i>Дякую за використання бота! Меню закрито.</i> 🤖",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
 
     @staticmethod
     def get_bot_commands() -> list[BotCommand]:
@@ -36,7 +53,7 @@ class ScheduleBotHandlers:
         """Головне меню бота."""
         kb = [
             # Запускаємо навігацію з відступом 0 (сьогодні)
-            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад (Графік)"),
+            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
                                   callback_data="nav_schedule:0")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
@@ -80,6 +97,18 @@ class ScheduleBotHandlers:
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
+    @staticmethod
+    def get_admin_keyboard() -> InlineKeyboardMarkup:
+        """Клавіатура адмін-панелі."""
+        kb = [
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+            [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
+            [InlineKeyboardButton(text="🧪 Тест: Нагадування (10 хв)", callback_data="admin_test_reminder")],
+            [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
+            [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
     # ==========================================
     #            ОБРОБНИКИ КОМАНД
     # ==========================================
@@ -91,20 +120,24 @@ class ScheduleBotHandlers:
             pass
 
         user = await db.get_user(message.from_user.id)
+        await self._cleanup_old_ui(message, state)
 
         if not user or not user['group_name']:
             await db.add_or_update_user(message.from_user.id)
             msg = await message.answer(get_msg("start.greeting_new",
                                                "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):"))
             await state.set_state(UserState.waiting_for_group)
-            await state.update_data(prompt_msg_id=msg.message_id)
+            await state.update_data(prompt_msg_id=msg.message_id, last_ui_msg_id=msg.message_id)
         else:
-            await message.answer(get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
-                                         name=message.from_user.first_name, group=user['group_name']),
-                                 parse_mode="HTML",
-                                 reply_markup=self.get_main_keyboard())
+            msg = await message.answer(
+                get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>",
+                        name=message.from_user.first_name, group=user['group_name']),
+                parse_mode="HTML",
+                reply_markup=self.get_main_keyboard()
+            )
+            await state.update_data(last_ui_msg_id=msg.message_id)
 
-    async def cmd_settings(self, message: Message):
+    async def cmd_settings(self, message: Message, state: FSMContext):
         try:
             await message.delete()
         except Exception:
@@ -114,9 +147,29 @@ class ScheduleBotHandlers:
         if not user or not user['group_name']:
             await message.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"))
             return
-        await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
-                             parse_mode="HTML",
-                             reply_markup=self.get_settings_keyboard(user))
+
+        await self._cleanup_old_ui(message, state)
+
+        msg = await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
+                                   parse_mode="HTML",
+                                   reply_markup=self.get_settings_keyboard(user))
+        await state.update_data(last_ui_msg_id=msg.message_id)
+
+    async def cmd_admin(self, message: Message, state: FSMContext):
+        """Відкриває адмін-панель"""
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if not SENIOR_ID or message.from_user.id != SENIOR_ID:
+            return
+
+        await self._cleanup_old_ui(message, state)
+
+        msg = await message.answer("👑 <b>Адмін Панель</b>\nОберіть дію нижче:", parse_mode="HTML",
+                                   reply_markup=self.get_admin_keyboard())
+        await state.update_data(last_ui_msg_id=msg.message_id)
 
     # ==========================================
     #          ОБРОБНИКИ СТАНІВ (FSM)
@@ -132,6 +185,26 @@ class ScheduleBotHandlers:
 
         data = await state.get_data()
         prompt_msg_id = data.get("prompt_msg_id")
+
+        clean_name = group_name.replace("-", "").replace(" ", "")
+        if len(clean_name) < 3 or not any(c.isalpha() for c in clean_name) or not any(c.isdigit() for c in clean_name):
+            error_text = "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
+            if prompt_msg_id:
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=message.chat.id,
+                        message_id=prompt_msg_id,
+                        text=error_text,
+                        parse_mode="HTML"
+                    )
+                    return
+                except Exception as e:
+                    if "message is not modified" in str(e).lower():
+                        return
+                    pass
+            new_msg = await message.answer(error_text, parse_mode="HTML")
+            await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
+            return
 
         checking_text = get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name)
 
@@ -152,15 +225,23 @@ class ScheduleBotHandlers:
 
         if is_valid:
             await db.add_or_update_user(message.from_user.id, group_name)
-            await processing_msg.edit_text(
-                get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
-                parse_mode="HTML",
-                reply_markup=self.get_main_keyboard())
-            await state.clear()
+            try:
+                await processing_msg.edit_text(
+                    get_msg("group.saved", "✅ Групу <b>{group_name}</b> успішно збережено!", group_name=group_name),
+                    parse_mode="HTML",
+                    reply_markup=self.get_main_keyboard())
+            except Exception:
+                pass
+            await state.set_state(None)
+            await state.update_data(last_ui_msg_id=processing_msg.message_id)
         else:
-            await processing_msg.edit_text(get_msg("group.not_found",
-                                                   "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
-                                                   group=group_name), parse_mode="HTML")
+            try:
+                await processing_msg.edit_text(get_msg("group.not_found",
+                                                       "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
+                                                       group=group_name), parse_mode="HTML")
+            except Exception:
+                pass
+            await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
     async def process_any_text(self, message: Message):
         """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи."""
@@ -168,10 +249,6 @@ class ScheduleBotHandlers:
             await message.delete()
         except Exception:
             pass
-
-        await message.answer(get_msg("start.use_menu",
-                                     "Для взаємодії використовуйте меню нижче. Якщо хочете змінити групу, натисніть 'Змінити групу'."),
-                             reply_markup=self.get_main_keyboard())
 
     # ==========================================
     #            ОБРОБНИКИ КОЛБЕКІВ
@@ -237,7 +314,7 @@ class ScheduleBotHandlers:
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
-        await state.update_data(prompt_msg_id=callback.message.message_id)
+        await state.update_data(prompt_msg_id=callback.message.message_id, last_ui_msg_id=callback.message.message_id)
         await callback.answer()
 
     async def process_back_to_main(self, callback: CallbackQuery):
@@ -254,17 +331,13 @@ class ScheduleBotHandlers:
 
         action = callback.data
         if action == "toggle_10_min":
-            new_val = 0 if user['notify_10_min'] else 1
-            await db.update_setting(user_id, 'notify_10_min', new_val)
+            await db.update_setting(user_id, 'notify_10_min', 0 if user['notify_10_min'] else 1)
         elif action == "toggle_evening":
-            new_val = 0 if user['notify_evening'] else 1
-            await db.update_setting(user_id, 'notify_evening', new_val)
+            await db.update_setting(user_id, 'notify_evening', 0 if user['notify_evening'] else 1)
         elif action == "toggle_pause":
-            new_val = 0 if user['is_paused'] else 1
-            await db.update_setting(user_id, 'is_paused', new_val)
+            await db.update_setting(user_id, 'is_paused', 0 if user['is_paused'] else 1)
         elif action == "toggle_notify_schedule_update":
-            new_val = 0 if user['notify_schedule_update'] else 1
-            await db.update_setting(user_id, 'notify_schedule_update', new_val)
+            await db.update_setting(user_id, 'notify_schedule_update', 0 if user['notify_schedule_update'] else 1)
 
         updated_user = await db.get_user(user_id)
         await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(updated_user))
@@ -279,6 +352,81 @@ class ScheduleBotHandlers:
         await callback.answer()
 
     # ==========================================
+    #          ОБРОБНИКИ АДМІН-ПАНЕЛІ
+    # ==========================================
+
+    async def process_admin_stats(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        stats = await db.get_statistics()
+
+        text = "📊 <b>Статистика бота:</b>\n\n"
+        text += f"👥 Всього користувачів: <b>{stats['total']}</b>\n"
+        text += f"🟢 Активних (не на паузі): <b>{stats['active']}</b>\n\n"
+        text += "🏆 <b>Топ 5 груп:</b>\n"
+
+        for idx, group in enumerate(stats['top_groups'], 1):
+            text += f"{idx}. {group['group_name']} ({group['count']} студ.)\n"
+
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=self.get_admin_keyboard())
+        await callback.answer()
+
+    async def process_admin_test_evening(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        user = await db.get_user(SENIOR_ID)
+
+        if not user or not user['group_name']:
+            await callback.answer("У вас не вказана група для тесту!", show_alert=True)
+            return
+
+        schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
+        if schedule:
+            text = "🧪 <i>ТЕСТ Вечірнього розкладу</i>\n\n"
+            has_pdf = False
+            for item in schedule:
+                if item.get('is_pdf'):
+                    if not has_pdf: text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"; has_pdf = True
+                    text += f"📄 {item['name']}\n"
+                else:
+                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+
+            await callback.message.answer(text,
+                                          parse_mode="HTML",
+                                          disable_web_page_preview=True,
+                                          reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+            await callback.answer("Успішно відправлено.")
+        else:
+            await callback.answer("На завтра пар немає (або помилка парсингу).", show_alert=True)
+
+    async def process_admin_test_reminder(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+
+        text = get_msg("reminders.10_min", "⏳ За 10 хвилин почнеться пара:\n<b>{subject_name}</b>",
+                       subject_name="🧪 Тестовий Предмет (Лекція)")
+        await callback.message.answer(f"🧪 <i>ТЕСТ Нагадування</i>\n\n{text}", parse_mode="HTML",
+                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                          [InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+        await callback.answer("Успішно відправлено.")
+
+    async def process_admin_test_update(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        user = await db.get_user(SENIOR_ID)
+
+        if not user or not user['group_name']:
+            await callback.answer("У вас не вказана група для тесту!", show_alert=True)
+            return
+
+        has_changes = await scraper.check_schedule_changes(user['group_name'])
+
+        if has_changes:
+            text = "🧪 <i>ТЕСТ Перевірки змін</i>\n\n⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"
+        else:
+            text = "🧪 <i>ТЕСТ Перевірки змін</i>\n\n✅ Змін на сайті не виявлено. Розклад актуальний."
+
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+        await callback.answer("Перевірка завершена.")
+
+    # ==========================================
     #            РЕЄСТРАЦІЯ РОУТІВ
     # ==========================================
 
@@ -288,6 +436,7 @@ class ScheduleBotHandlers:
         # Команди
         self.router.message.register(self.cmd_start, Command("start"))
         self.router.message.register(self.cmd_settings, Command("settings"))
+        self.router.message.register(self.cmd_admin, Command("admin"))
 
         # FSM (Очікування уводу)
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
@@ -301,6 +450,12 @@ class ScheduleBotHandlers:
 
         # Реєстрація кнопки видалення повідомлення
         self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
+
+        # Адмінські колбеки
+        self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")
+        self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
+        self.router.callback_query.register(self.process_admin_test_reminder, F.data == "admin_test_reminder")
+        self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")
 
         # Текстові повідомлення (fallback)
         self.router.message.register(self.process_any_text, F.text)
