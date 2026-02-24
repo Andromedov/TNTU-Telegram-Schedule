@@ -17,7 +17,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 
 ## ✨ Features
 
-- 📅 **View Today's Schedule** - Display the current day's classes at any time.
+- 📅 **View Schedule** - Display the classes at any time.
 - 🌙 **Evening Schedule Delivery** - Automatically send tomorrow's schedule every evening at 20:00.
 - ⏰ **10-Minute Reminders** - Get notified 10 minutes before each class starts.
 - 🔔 **Schedule Change Detection** - Get notified when your group's schedule is updated on the website.
