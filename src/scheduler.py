@@ -1,10 +1,18 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import database as db
 import scraper
 import logging
 from datetime import datetime, timedelta
 from messages import get_msg
+
+
+def _get_dismiss_keyboard() -> InlineKeyboardMarkup:
+    """Генерує клавіатуру з однією кнопкою для видалення повідомлення."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_msg("keyboard.dismiss", "✅ Прочитано"), callback_data="delete_msg")]
+    ])
 
 
 async def send_evening_schedule(bot: Bot):
@@ -14,7 +22,7 @@ async def send_evening_schedule(bot: Bot):
         if user['notify_evening'] and user['group_name']:
             schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
             if schedule:
-                text = get_msg("schedule.evening_title") + "\n"
+                text = get_msg("schedule.evening_title", "🌙 <b>Розклад на завтра:</b>") + "\n"
                 has_pdf = False
                 for item in schedule:
                     if item.get('is_pdf'):
@@ -25,7 +33,13 @@ async def send_evening_schedule(bot: Bot):
                     else:
                         text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
                 try:
-                    await bot.send_message(user['user_id'], text, parse_mode="HTML", disable_web_page_preview=True)
+                    await bot.send_message(
+                        user['user_id'],
+                        text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                        reply_markup=_get_dismiss_keyboard()
+                    )
                 except Exception as e:
                     logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
@@ -33,7 +47,12 @@ async def send_evening_schedule(bot: Bot):
 async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str):
     """Відправляє нагадування про конкретну пару."""
     try:
-        await bot.send_message(user_id, get_msg("reminders.10_min", subject_name=subject_name), parse_mode="HTML")
+        await bot.send_message(
+            user_id,
+            get_msg("reminders.10_min", "⏳ За 10 хвилин почнеться пара:\n<b>{subject_name}</b>", subject_name=subject_name),
+            parse_mode="HTML",
+            reply_markup=_get_dismiss_keyboard()
+        )
     except Exception as e:
         logging.error(f"Помилка відправки нагадування: {e}")
 
@@ -80,7 +99,12 @@ async def check_schedule_updates_task(bot: Bot):
         if has_changes:
             for uid in user_ids:
                 try:
-                    await bot.send_message(uid, get_msg("schedule.changed"))
+                    await bot.send_message(
+                        uid,
+                        get_msg("schedule.changed", "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"),
+                        parse_mode="HTML",
+                        reply_markup=_get_dismiss_keyboard()
+                    )
                 except:
                     pass
 

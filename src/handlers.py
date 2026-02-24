@@ -36,7 +36,7 @@ class ScheduleBotHandlers:
         """Головне меню бота."""
         kb = [
             # Запускаємо навігацію з відступом 0 (сьогодні)
-            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
+            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад (Графік)"),
                                   callback_data="nav_schedule:0")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
@@ -270,6 +270,14 @@ class ScheduleBotHandlers:
         await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(updated_user))
         await callback.answer(get_msg("settings.updated", "Налаштування оновлено!"))
 
+    async def process_delete_msg(self, callback: CallbackQuery):
+        """Обробник для кнопки 'Прочитано', який просто видаляє повідомлення із чату."""
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.answer()
+
     # ==========================================
     #            РЕЄСТРАЦІЯ РОУТІВ
     # ==========================================
@@ -290,6 +298,9 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
         self.router.callback_query.register(self.process_toggles, F.data.startswith("toggle_"))
+
+        # Реєстрація кнопки видалення повідомлення
+        self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
 
         # Текстові повідомлення (fallback)
         self.router.message.register(self.process_any_text, F.text)
