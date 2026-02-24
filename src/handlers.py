@@ -21,12 +21,18 @@ class ScheduleBotHandlers:
         self._register_handlers()
 
     async def _cleanup_old_ui(self, message: Message, state: FSMContext):
-        """Видаляє попереднє повідомлення меню, щоб запобігти спаму."""
+        """Редагує попереднє повідомлення меню, закриваючи його, щоб запобігти спаму."""
         data = await state.get_data()
         old_msg_id = data.get("last_ui_msg_id")
         if old_msg_id:
             try:
-                await message.bot.delete_message(chat_id=message.chat.id, message_id=old_msg_id)
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=old_msg_id,
+                    text="<i>Дякую за використання бота! Меню закрито.</i> 🤖",
+                    parse_mode="HTML",
+                    reply_markup=None
+                )
             except Exception:
                 pass
 
@@ -282,7 +288,7 @@ class ScheduleBotHandlers:
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
-        await state.update_data(prompt_msg_id=callback.message.message_id)
+        await state.update_data(prompt_msg_id=callback.message.message_id, last_ui_msg_id=callback.message.message_id)
         await callback.answer()
 
     async def process_back_to_main(self, callback: CallbackQuery):
