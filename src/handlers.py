@@ -186,6 +186,24 @@ class ScheduleBotHandlers:
         data = await state.get_data()
         prompt_msg_id = data.get("prompt_msg_id")
 
+        clean_name = group_name.replace("-", "").replace(" ", "")
+        if len(clean_name) < 3 or not any(c.isalpha() for c in clean_name) or not any(c.isdigit() for c in clean_name):
+            error_text = "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
+            if prompt_msg_id:
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=message.chat.id,
+                        message_id=prompt_msg_id,
+                        text=error_text,
+                        parse_mode="HTML"
+                    )
+                    return
+                except Exception:
+                    pass
+            new_msg = await message.answer(error_text, parse_mode="HTML")
+            await state.update_data(prompt_msg_id=new_msg.message_id)
+            return
+
         checking_text = get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name)
 
         if prompt_msg_id:
