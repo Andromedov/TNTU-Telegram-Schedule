@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import database as db
 import scraper
 from messages import get_msg
+from config import SENIOR_ID
 
 
 class UserState(StatesGroup):
@@ -80,6 +81,18 @@ class ScheduleBotHandlers:
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
+    @staticmethod
+    def get_admin_keyboard() -> InlineKeyboardMarkup:
+        """Клавіатура адмін-панелі."""
+        kb = [
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+            [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
+            [InlineKeyboardButton(text="🧪 Тест: Нагадування (10 хв)", callback_data="admin_test_reminder")],
+            [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
+            [InlineKeyboardButton(text="🔙 Закрити", callback_data="delete_msg")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
     # ==========================================
     #            ОБРОБНИКИ КОМАНД
     # ==========================================
@@ -117,6 +130,19 @@ class ScheduleBotHandlers:
         await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
                              parse_mode="HTML",
                              reply_markup=self.get_settings_keyboard(user))
+
+    async def cmd_admin(self, message: Message):
+        """Відкриває адмін-панель"""
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if not SENIOR_ID or message.from_user.id != SENIOR_ID:
+            return
+
+        await message.answer("👑 <b>Адмін Панель</b>\nОберіть дію нижче:", parse_mode="HTML",
+                             reply_markup=self.get_admin_keyboard())
 
     # ==========================================
     #          ОБРОБНИКИ СТАНІВ (FSM)
@@ -254,17 +280,13 @@ class ScheduleBotHandlers:
 
         action = callback.data
         if action == "toggle_10_min":
-            new_val = 0 if user['notify_10_min'] else 1
-            await db.update_setting(user_id, 'notify_10_min', new_val)
+            await db.update_setting(user_id, 'notify_10_min', 0 if user['notify_10_min'] else 1)
         elif action == "toggle_evening":
-            new_val = 0 if user['notify_evening'] else 1
-            await db.update_setting(user_id, 'notify_evening', new_val)
+            await db.update_setting(user_id, 'notify_evening', 0 if user['notify_evening'] else 1)
         elif action == "toggle_pause":
-            new_val = 0 if user['is_paused'] else 1
-            await db.update_setting(user_id, 'is_paused', new_val)
+            await db.update_setting(user_id, 'is_paused', 0 if user['is_paused'] else 1)
         elif action == "toggle_notify_schedule_update":
-            new_val = 0 if user['notify_schedule_update'] else 1
-            await db.update_setting(user_id, 'notify_schedule_update', new_val)
+            await db.update_setting(user_id, 'notify_schedule_update', 0 if user['notify_schedule_update'] else 1)
 
         updated_user = await db.get_user(user_id)
         await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(updated_user))
@@ -279,6 +301,81 @@ class ScheduleBotHandlers:
         await callback.answer()
 
     # ==========================================
+    #          ОБРОБНИКИ АДМІН-ПАНЕЛІ
+    # ==========================================
+
+    async def process_admin_stats(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        stats = await db.get_statistics()
+
+        text = "📊 <b>Статистика бота:</b>\n\n"
+        text += f"👥 Всього користувачів: <b>{stats['total']}</b>\n"
+        text += f"🟢 Активних (не на паузі): <b>{stats['active']}</b>\n\n"
+        text += "🏆 <b>Топ 5 груп:</b>\n"
+
+        for idx, group in enumerate(stats['top_groups'], 1):
+            text += f"{idx}. {group['group_name']} ({group['count']} студ.)\n"
+
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=self.get_admin_keyboard())
+        await callback.answer()
+
+    async def process_admin_test_evening(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        user = await db.get_user(SENIOR_ID)
+
+        if not user or not user['group_name']:
+            await callback.answer("У вас не вказана група для тесту!", show_alert=True)
+            return
+
+        schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
+        if schedule:
+            text = "🧪 <i>ТЕСТ Вечірнього розкладу</i>\n\n"
+            has_pdf = False
+            for item in schedule:
+                if item.get('is_pdf'):
+                    if not has_pdf: text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"; has_pdf = True
+                    text += f"📄 {item['name']}\n"
+                else:
+                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+
+            await callback.message.answer(text,
+                                          parse_mode="HTML",
+                                          disable_web_page_preview=True,
+                                          reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+            await callback.answer("Успішно відправлено.")
+        else:
+            await callback.answer("На завтра пар немає (або помилка парсингу).", show_alert=True)
+
+    async def process_admin_test_reminder(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+
+        text = get_msg("reminders.10_min", "⏳ За 10 хвилин почнеться пара:\n<b>{subject_name}</b>",
+                       subject_name="🧪 Тестовий Предмет (Лекція)")
+        await callback.message.answer(f"🧪 <i>ТЕСТ Нагадування</i>\n\n{text}", parse_mode="HTML",
+                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                          [InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+        await callback.answer("Успішно відправлено.")
+
+    async def process_admin_test_update(self, callback: CallbackQuery):
+        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
+        user = await db.get_user(SENIOR_ID)
+
+        if not user or not user['group_name']:
+            await callback.answer("У вас не вказана група для тесту!", show_alert=True)
+            return
+
+        has_changes = await scraper.check_schedule_changes(user['group_name'])
+
+        if has_changes:
+            text = "🧪 <i>ТЕСТ Перевірки змін</i>\n\n⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"
+        else:
+            text = "🧪 <i>ТЕСТ Перевірки змін</i>\n\n✅ Змін на сайті не виявлено. Розклад актуальний."
+
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
+        await callback.answer("Перевірка завершена.")
+
+    # ==========================================
     #            РЕЄСТРАЦІЯ РОУТІВ
     # ==========================================
 
@@ -288,6 +385,7 @@ class ScheduleBotHandlers:
         # Команди
         self.router.message.register(self.cmd_start, Command("start"))
         self.router.message.register(self.cmd_settings, Command("settings"))
+        self.router.message.register(self.cmd_admin, Command("admin"))
 
         # FSM (Очікування уводу)
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
@@ -301,6 +399,12 @@ class ScheduleBotHandlers:
 
         # Реєстрація кнопки видалення повідомлення
         self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
+
+        # Адмінські колбеки
+        self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")
+        self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
+        self.router.callback_query.register(self.process_admin_test_reminder, F.data == "admin_test_reminder")
+        self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")
 
         # Текстові повідомлення (fallback)
         self.router.message.register(self.process_any_text, F.text)

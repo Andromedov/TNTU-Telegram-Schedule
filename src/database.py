@@ -17,14 +17,14 @@ async def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-         CREATE TABLE IF NOT EXISTS users
-            (
-                user_id
-                INTEGER
-                PRIMARY
-                KEY
-            )
-        """)
+                        CREATE TABLE IF NOT EXISTS users
+                        (
+                            user_id
+                            INTEGER
+                            PRIMARY
+                            KEY
+                        )
+                        """)
 
         db.row_factory = aiosqlite.Row
         async with db.execute("PRAGMA table_info(users)") as cursor:
@@ -45,10 +45,10 @@ async def add_or_update_user(user_id: int, group_name: str = None):
     async with aiosqlite.connect(DB_PATH) as db:
         if group_name:
             await db.execute("""
-                INSERT INTO users (user_id, group_name) 
-                VALUES (?, ?) 
-                ON CONFLICT(user_id) DO UPDATE SET group_name=excluded.group_name
-            """, (user_id, group_name))
+                             INSERT INTO users (user_id, group_name)
+                             VALUES (?, ?) ON CONFLICT(user_id) DO
+                             UPDATE SET group_name=excluded.group_name
+                             """, (user_id, group_name))
         else:
             await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
         await db.commit()
@@ -72,3 +72,31 @@ async def get_active_users():
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE is_paused = 0") as cursor:
             return await cursor.fetchall()
+
+
+async def get_statistics() -> dict:
+    """Збирає статистику для Senior_ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute("SELECT COUNT(*) as total FROM users") as cursor:
+            total_users = (await cursor.fetchone())['total']
+
+        async with db.execute("SELECT COUNT(*) as active FROM users WHERE is_paused = 0") as cursor:
+            active_users = (await cursor.fetchone())['active']
+
+        async with db.execute("""
+                              SELECT group_name, COUNT(*) as count
+                              FROM users
+                              WHERE group_name IS NOT NULL
+                              GROUP BY group_name
+                              ORDER BY count DESC
+                                  LIMIT 5
+                              """) as cursor:
+            top_groups = await cursor.fetchall()
+
+        return {
+            "total": total_users,
+            "active": active_users,
+            "top_groups": top_groups
+        }
