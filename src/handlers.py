@@ -92,11 +92,11 @@ class ScheduleBotHandlers:
         kb = [
             [
                 InlineKeyboardButton(text="⬅️", callback_data=f"nav_schedule:{offset - 1}"),
-                InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main"),
+                InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_schedule:{offset}"),
                 InlineKeyboardButton(text="➡️", callback_data=f"nav_schedule:{offset + 1}")
             ],
             [
-                InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_schedule:{offset}")
+                InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
