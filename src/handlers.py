@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramBadRequest
 from datetime import datetime, timedelta
 
 import database as db
@@ -93,6 +94,9 @@ class ScheduleBotHandlers:
                 InlineKeyboardButton(text="⬅️", callback_data=f"nav_schedule:{offset - 1}"),
                 InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main"),
                 InlineKeyboardButton(text="➡️", callback_data=f"nav_schedule:{offset + 1}")
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_schedule:{offset}")
             ]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -265,7 +269,10 @@ class ScheduleBotHandlers:
         offset = int(callback.data.split(":")[1])
         target_date = datetime.now() + timedelta(days=offset)
 
-        await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад..."))
+        try:
+            await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад..."))
+        except TelegramBadRequest:
+            pass
 
         schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
 
@@ -296,13 +303,19 @@ class ScheduleBotHandlers:
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
-        await callback.message.edit_text(
-            text,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=self.get_schedule_nav_keyboard(offset)
-        )
-        await callback.answer()
+        try:
+            await callback.message.edit_text(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=self.get_schedule_nav_keyboard(offset)
+            )
+            await callback.answer("🔄 Оновлено!")
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                await callback.answer("✅ Розклад актуальний (змін немає).")
+            else:
+                await callback.answer()
 
     async def process_show_settings(self, callback: CallbackQuery):
         user = await db.get_user(callback.from_user.id)
