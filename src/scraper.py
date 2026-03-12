@@ -81,17 +81,16 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
 
             # 2. GET запити по факультетах
             group_translit = _transliterate_for_url(clean_group)
-            for fac in ['fis', 'fpt', 'fmt', 'fem']:
-                async with session.get(TNTU_SCHEDULE_URL,
-                                       params={'p': 'uk/schedule', 's': f"{fac}-{group_translit}"}) as resp:
-                    if resp.status == 200:
-                        html = await resp.text()
-                        soup = BeautifulSoup(html, 'html.parser')
-                        if soup.find('table', id='ScheduleWeek'):
+            async with session.get(TNTU_SCHEDULE_URL,
+                                   params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    if soup.find('table', id='ScheduleWeek'):
+                        return html
+                    for h2 in soup.find_all('h2'):
+                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
                             return html
-                        for h2 in soup.find_all('h2'):
-                            if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
-                                return html
 
             # 3. Резервний GET запит для PDF сторінки
             async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
