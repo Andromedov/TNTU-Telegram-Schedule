@@ -6,7 +6,7 @@
 [![Telegram](https://img.shields.io/badge/aiogram-3.x-24A1DE?logo=telegram&logoColor=white)](https://docs.aiogram.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-Enabled-90D4F4?logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue?logo=gplv3&logoColor=white.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: Apache License v2.0](https://img.shields.io/badge/License-Apache_2.0-orange?logo=apache&logoColor=white.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 **A Telegram bot for tracking Ternopil National Technical University (TNTU) class schedules.**<br>
 Provides real-time access to schedules, sends reminders, and allows customizable notifications.
@@ -33,7 +33,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 
 ## 🚀 Installation & Setup
 
-You can run this bot locally or via Docker. In both cases, you will need a Telegram Bot Token from [@BotFather](https://t.me/BotFather).
+You can either just use bot that already running [@tntu_schedule_bot](https://t.me/tntu_schedule_bot), or run this bot locally or via Docker. In case of selfhosted option, you will need a Telegram Bot Token from [@BotFather](https://t.me/BotFather).
 
 ### 1. Configuration (`.env`)
 First, clone the repository and set up your environment variables:
@@ -95,8 +95,9 @@ The bot uses a JSON-based localization system. You can modify button labels, use
 
 ## 📜 License
 
-This project is licensed under the GNU GPL v3 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
 **Note:** This bot requires internet access to fetch schedule data from the official TNTU website. Schedule availability and formatting strictly depend on the official website's structure.
+**Note 2:** All of code is created by Google Gemini & [Me](https://github.com/Andromedov). This bot is designed solely to help you easily find the schedule.
