@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 import os
-import copy
 from typing import Optional, Tuple, List, Dict
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
@@ -52,9 +51,7 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     target_monday = target_date.date() - timedelta(days=target_date.weekday())
     weeks_diff = (target_monday - today_monday).days // 7
 
-    if weeks_diff % 2 != 0:
-        return 2 if current_week == 1 else 1
-    return current_week
+    return 2 if (current_week == 1 and weeks_diff % 2 != 0) else current_week
 
 
 # ==========================================
@@ -72,36 +69,24 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
             async with session.post(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}, data={'group': group_name}) as resp:
                 if resp.status == 200:
                     html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    if soup.find('table', id='ScheduleWeek'):
+                    if 'id="ScheduleWeek"' in html or clean_group_no_hyphen in html.upper().replace('-', ''):
                         return html
-                    for h2 in soup.find_all('h2'):
-                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
-                            return html
 
-            # 2. GET запити по факультетах
+            # 2. Прямі посилання по факультетах
             group_translit = _transliterate_for_url(clean_group)
             async with session.get(TNTU_SCHEDULE_URL,
                                    params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
                 if resp.status == 200:
                     html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    if soup.find('table', id='ScheduleWeek'):
+                    if 'id="ScheduleWeek"' in html or clean_group_no_hyphen in html.upper().replace('-', ''):
                         return html
-                    for h2 in soup.find_all('h2'):
-                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
-                            return html
 
             # 3. Резервний GET запит для PDF сторінки
             async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
                 if resp.status == 200:
                     html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    for a_tag in soup.find_all('a', href=True):
-                        if '.pdf' in a_tag['href'].lower():
-                            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ').replace('-', '')
-                            if clean_group_no_hyphen in safe_text:
-                                return html
+                    if clean_group_no_hyphen in html.upper().replace('\xa0', ' ').replace('-', ''):
+                        return html
 
             return None
     except Exception as e:
@@ -115,22 +100,18 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
 
 def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
     bool, Optional[BeautifulSoup], List[Dict], Optional[BeautifulSoup]]:
-    """Парсить HTML, повертає об'єкти для розкладу."""
+    """
+    Єдина функція, яка парсить HTML.
+    Повертає: (чи_існує_група, таблиця_розкладу, список_pdf, об'єкт_soup)
+    """
     if not html:
         return False, None, [], None
 
     soup = BeautifulSoup(html, 'html.parser')
     clean_group_no_hyphen = sanitize_group(group_name).upper().replace('-', '')
 
-    table = soup.find('table', id='ScheduleWeek')
-    if not table:
-        for tbl in soup.find_all('table'):
-            headers = [th.get_text(strip=True).lower() for th in tbl.find_all('th')]
-            if any('понеділок' in h or 'вівторок' in h for h in headers):
-                table = tbl
-                break
-
     group_exists = False
+    table = soup.find('table', id='ScheduleWeek')
     if table:
         group_exists = True
     else:
@@ -150,8 +131,8 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
                     'ГРАФІК' in safe_text or 'РОЗКЛАД' in safe_text):
                 full_link = a_tag['href'] if a_tag['href'].startswith(
                     'http') else f"https://tntu.edu.ua/{a_tag['href']}"
-                pdf_links.append({'name': raw_text, 'url': f"https://docs.google.com/viewer?url={full_link}"})
-                group_exists = True
+                pdf_links.append({'name': raw_text, 'url': full_link})
+                group_exists = True  # Якщо знайшли PDF групи — вона існує!
 
     return group_exists, table, pdf_links, soup
 
@@ -224,18 +205,13 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
     target_week = _get_target_week(soup, target_date)
 
-    grid = {}
-    rows = table.find_all('tr')
-
+    grid, rows = {}, table.find_all('tr')
     for r_idx, row in enumerate(rows):
         col_idx = 0
-        cells = row.find_all(['td', 'th'])
-
-        for cell in cells:
+        for cell in row.find_all(['td', 'th']):
             while grid.get((r_idx, col_idx)) is not None:
                 col_idx += 1
-            rowspan = int(cell.get('rowspan', '1'))
-            colspan = int(cell.get('colspan', '1'))
+            rowspan, colspan = int(cell.get('rowspan', '1')), int(cell.get('colspan', '1'))
             for r in range(rowspan):
                 for c in range(colspan):
                     grid[(r_idx + r, col_idx + c)] = cell
@@ -248,66 +224,29 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     for r_idx in range(1, len(rows)):
         time_cell = grid.get((r_idx, 0))
         if time_cell:
-            t_id = id(time_cell)
-            if t_id not in time_to_rows:
-                time_to_rows[t_id] = {'cell': time_cell, 'indices': []}
-            if r_idx not in time_to_rows[t_id]['indices']:
-                time_to_rows[t_id]['indices'].append(r_idx)
+            time_to_rows.setdefault(time_cell, []).append(r_idx)
 
-    for t_id, data in time_to_rows.items():
-        time_cell = data['cell']
-        indices = data['indices']
-
-        if len(indices) >= 2:
-            active_r_idx = indices[0] if target_week == 1 else indices[1]
-        else:
-            active_r_idx = indices[0]
+    for time_cell, indices in time_to_rows.items():
+        unique_indices = list(dict.fromkeys(indices))
+        active_r_idx = unique_indices[0] if (len(unique_indices) < 2 or target_week == 1) else unique_indices[1]
 
         target_cell = grid.get((active_r_idx, target_col))
-
-        if not target_cell or id(target_cell) in processed_cells:
+        if not target_cell or target_cell in processed_cells:
             continue
-
-        processed_cells.add(id(target_cell))
+        processed_cells.add(target_cell)
 
         time_div = time_cell.find('div', class_='LessonPeriod')
-        time_text = time_div.get_text(separator=' ', strip=True) if time_div else time_cell.get_text(separator=' ',
-                                                                                                     strip=True)
-        if not time_text:
-            continue
-
-        subject_name = ""
         subject_link = target_cell.find('a')
-        subject_div = target_cell.find('div', class_='Subject')
 
-        if subject_link:
-            subject_name = subject_link.get_text(separator=' ', strip=True)
-        elif subject_div:
-            subject_name = subject_div.get_text(separator=' ', strip=True)
-        else:
-            clone = copy.deepcopy(target_cell)
-            for d in clone.find_all(['div', 'span', 'br'], class_=['Info', 'Notes', 'LessonType']):
-                d.decompose()
-            text = clone.get_text(separator=' ', strip=True)
-            if text:
-                subject_name = text
-
-        if subject_name and subject_name not in ["-", ""]:
+        if time_div and subject_link:
             info_div = target_cell.find('div', class_='Info')
             notes_div = target_cell.find('div', class_='Notes')
 
-            full_name = subject_name
-            if info_div:
-                info_text = info_div.get_text(separator=' ', strip=True)
-                if info_text:
-                    full_name += f" ({info_text})"
-
+            full_name = f"{subject_link.text.strip()} ({info_div.get_text(separator=' ', strip=True) if info_div else ''})"
             if notes_div:
-                notes_text = notes_div.get_text(separator=' ', strip=True)
-                if notes_text:
-                    full_name += f" ❗️{notes_text}"
+                full_name += f" ❗️{notes_div.text.strip()}"
 
-            schedule.append({'time': time_text, 'name': full_name, 'is_pdf': False})
+            schedule.append({'time': time_div.text.strip(), 'name': full_name, 'is_pdf': False})
 
     schedule.extend(formatted_pdfs)
     return schedule
