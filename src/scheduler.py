@@ -44,8 +44,13 @@ async def send_evening_schedule(bot: Bot):
                     logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
 
-async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str):
+async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str):
     """Відправляє нагадування про конкретну пару."""
+    user = await db.get_user(user_id)
+
+    if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
+        return
+
     try:
         await bot.send_message(
             user_id,
@@ -78,7 +83,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
                             send_10_min_reminder,
                             'date',
                             run_date=reminder_time,
-                            args=[bot, user['user_id'], item['name']]
+                            args=[bot, user['user_id'], item['name'], user['group_name']]
                         )
                 except Exception as e:
                     logging.error(f"Помилка створення задачі: {e}")
