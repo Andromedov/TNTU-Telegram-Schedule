@@ -72,7 +72,9 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     target_monday = target_date.date() - timedelta(days=target_date.weekday())
     weeks_diff = (target_monday - today_monday).days // 7
 
-    return 2 if (current_week == 1 and weeks_diff % 2 != 0) else current_week
+    if weeks_diff % 2 != 0:
+        return 2 if current_week == 1 else 1
+    return current_week
 
 
 # ==========================================
