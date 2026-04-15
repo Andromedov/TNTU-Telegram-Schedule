@@ -1,15 +1,23 @@
 import aiohttp
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import logging
 from datetime import datetime, timedelta
 import hashlib
 import json
 import os
 import copy
-from typing import Optional, Tuple, List, Dict
+import asyncio
+from typing import Optional, Tuple, List, Dict, Any
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 HASHES_FILE = "data/schedule_hashes.json"
+
+# ==========================================
+#          ГЛОБАЛЬНИЙ КЕШ
+# ==========================================
+# Формат: {"GROUP_NAME": {"html": "...", "timestamp": datetime_object}}
+_html_cache: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL_MINUTES = 5
 
 
 # ==========================================
@@ -38,12 +46,24 @@ def _transliterate_for_url(text: str) -> str:
     return "".join(mapping.get(char, char) for char in text.lower())
 
 
+def _is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
+    """Перевіряє, чи містить сторінка розклад для цільової групи (допоміжна функція)."""
+    if isinstance(soup.find('table', id='ScheduleWeek'), Tag):
+        return True
+
+    for h2 in soup.find_all('h2'):
+        if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(h2.get_text()).upper().replace('-', ''):
+            return True
+
+    return False
+
+
 def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     """Визначає, який тиждень (1 чи 2) буде в цільову дату."""
     h3_black = soup.find('h3', class_='Black')
     current_week = 1
-    if h3_black:
-        text = h3_black.text.lower()
+    if isinstance(h3_black, Tag):
+        text = h3_black.get_text().lower()
         if 'другий' in text:
             current_week = 2
 
@@ -56,6 +76,26 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
 
 
 # ==========================================
+#    СИНХРОННІ ФУНКЦІЇ ДЛЯ РОБОТИ З ФАЙЛАМИ
+# ==========================================
+
+def _read_hashes_sync() -> dict:
+    if os.path.exists(HASHES_FILE):
+        try:
+            with open(HASHES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _write_hashes_sync(hashes: dict):
+    os.makedirs(os.path.dirname(HASHES_FILE), exist_ok=True)
+    with open(HASHES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(hashes, f)
+
+
+# ==========================================
 #      МЕРЕЖЕВИЙ РІВЕНЬ (Отримання HTML)
 # ==========================================
 
@@ -64,44 +104,62 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
     clean_group = sanitize_group(group_name)
     clean_group_no_hyphen = clean_group.upper().replace('-', '')
 
+    now = datetime.now()
+    if clean_group in _html_cache:
+        cached_data = _html_cache[clean_group]
+        if now - cached_data['timestamp'] < timedelta(minutes=CACHE_TTL_MINUTES):
+            return cached_data['html']
+
+    html_result = None
+
     try:
         async with aiohttp.ClientSession() as session:
-            # 1. POST запит
+            # POST запит
             async with session.post(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}, data={'group': group_name}) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    if soup.find('table', id='ScheduleWeek'):
-                        return html
-                    for h2 in soup.find_all('h2'):
-                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
-                            return html
+                    if _is_valid_schedule_page(soup, clean_group_no_hyphen):
+                        html_result = html
 
-            # 2. GET запити по факультетах
-            group_translit = _transliterate_for_url(clean_group)
-            async with session.get(TNTU_SCHEDULE_URL,
-                                   params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    if soup.find('table', id='ScheduleWeek'):
-                        return html
-                    for h2 in soup.find_all('h2'):
-                        if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
-                            return html
+            # Якщо POST не спрацював, робимо GET запит по факультетах
+            if not html_result:
+                group_translit = _transliterate_for_url(clean_group)
+                async with session.get(TNTU_SCHEDULE_URL,
+                                       params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        if _is_valid_schedule_page(soup, clean_group_no_hyphen):
+                            html_result = html
 
-            # 3. Резервний GET запит для PDF сторінки
-            async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    for a_tag in soup.find_all('a', href=True):
-                        if '.pdf' in a_tag['href'].lower():
-                            safe_text = sanitize_group(a_tag.text).upper().replace('\xa0', ' ').replace('-', '')
-                            if clean_group_no_hyphen in safe_text:
-                                return html
+            # Резервний GET запит для PDF сторінки
+            if not html_result:
+                async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        for a_tag in soup.find_all('a', href=True):
+                            href_attr = a_tag.get('href')
+                            if not href_attr:
+                                continue
 
-            return None
+                            # Надійне отримання рядка з атрибуту
+                            href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
+
+                            if '.pdf' in href_str.lower():
+                                safe_text = sanitize_group(a_tag.get_text()).upper().replace('\xa0', ' ').replace('-',
+                                                                                                                  '')
+                                if clean_group_no_hyphen in safe_text:
+                                    html_result = html
+                                    break
+
+            # Зберігаємо результат у кеш, якщо він знайдений
+            if html_result:
+                _html_cache[clean_group] = {'html': html_result, 'timestamp': now}
+
+            return html_result
+
     except Exception as e:
         logging.error(f"Помилка скрейпінгу: {e}")
         return None
@@ -112,7 +170,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
 # ==========================================
 
 def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
-    bool, Optional[BeautifulSoup], List[Dict], Optional[BeautifulSoup]]:
+    bool, Optional[Tag], List[Dict[str, Any]], Optional[BeautifulSoup]]:
     """Парсить HTML, повертає об'єкти для розкладу."""
     if not html:
         return False, None, [], None
@@ -122,33 +180,50 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
 
     group_exists = False
     table = soup.find('table', id='ScheduleWeek')
-    if not table:
+
+    if not isinstance(table, Tag):
+        table = None
         for tbl in soup.find_all('table'):
+            if not isinstance(tbl, Tag):
+                continue
             headers = [th.get_text(strip=True).lower() for th in tbl.find_all('th')]
             if any('понеділок' in h or 'вівторок' in h for h in headers):
                 table = tbl
                 break
 
-    if table:
+    if isinstance(table, Tag):
         group_exists = True
     else:
         for h2 in soup.find_all('h2'):
-            if clean_group_no_hyphen in sanitize_group(h2.text).upper().replace('-', ''):
+            if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(h2.get_text()).upper().replace('-', ''):
                 group_exists = True
                 break
 
-    pdf_links = []
+    pdf_links: List[Dict[str, Any]] = []
     for a_tag in soup.find_all('a', href=True):
-        href = a_tag['href'].lower()
-        if '.pdf' in href:
-            raw_text = a_tag.text.strip()
+        if not isinstance(a_tag, Tag):
+            continue
+
+        href_attr = a_tag.get('href')
+        if not href_attr:
+            continue
+
+        # Якщо href_attr повертає список (дуже рідко, але буває), беремо 1 елемент
+        href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
+
+        if '.pdf' in href_str.lower():
+            raw_text = a_tag.get_text(strip=True)
             safe_text = sanitize_group(raw_text).upper().replace('\xa0', ' ').replace('-', '')
 
             if ('ГРУПИ' in safe_text and clean_group_no_hyphen in safe_text) or (
                     'ГРАФІК' in safe_text or 'РОЗКЛАД' in safe_text):
-                full_link = a_tag['href'] if a_tag['href'].startswith(
-                    'http') else f"https://tntu.edu.ua/{a_tag['href']}"
-                pdf_links.append({'name': raw_text, 'url': full_link})
+                full_link = href_str if href_str.startswith(
+                    'http') else f"https://tntu.edu.ua/{href_str}"
+
+                # Уникаємо дублікатів PDF
+                if not any(pdf['url'] == full_link for pdf in pdf_links):
+                    pdf_links.append({'name': raw_text, 'url': full_link})
+
                 group_exists = True
 
     return group_exists, table, pdf_links, soup
@@ -170,36 +245,28 @@ async def check_schedule_changes(group_name: str) -> bool:
     html = await fetch_schedule_html(group_name)
     _, table, _, _ = _parse_core_data(html, group_name)
 
-    if not table:
+    if not isinstance(table, Tag):
         return False
 
     for el in table.find_all(['h2', 'h3']):
-        el.decompose()
+        if isinstance(el, Tag):
+            el.decompose()
 
     table_text = table.get_text(separator=' ', strip=True)
     current_hash = hashlib.md5(table_text.encode('utf-8')).hexdigest()
 
-    hashes = {}
-    if os.path.exists(HASHES_FILE):
-        try:
-            with open(HASHES_FILE, 'r', encoding='utf-8') as f:
-                hashes = json.load(f)
-        except json.JSONDecodeError:
-            pass
+    hashes = await asyncio.to_thread(_read_hashes_sync)
 
     clean_group = sanitize_group(group_name)
     previous_hash = hashes.get(clean_group)
 
     if previous_hash and previous_hash != current_hash:
         hashes[clean_group] = current_hash
-        with open(HASHES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(hashes, f)
+        await asyncio.to_thread(_write_hashes_sync, hashes)
         return True
     elif not previous_hash:
         hashes[clean_group] = current_hash
-        os.makedirs(os.path.dirname(HASHES_FILE), exist_ok=True)
-        with open(HASHES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(hashes, f)
+        await asyncio.to_thread(_write_hashes_sync, hashes)
 
     return False
 
@@ -216,24 +283,38 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     formatted_pdfs = [{'time': '📄 PDF', 'name': f"<a href='{p['url']}'>{p['name']}</a>", 'is_pdf': True} for p in
                       pdf_links]
 
+    if not soup:
+        return formatted_pdfs
+
     weekday = target_date.weekday()
-    if weekday > 4 or not table:
+    if weekday > 4 or not isinstance(table, Tag):
         return formatted_pdfs
 
     target_week = _get_target_week(soup, target_date)
 
-    grid = {}
+    grid: Dict[Tuple[int, int], Tag] = {}
     rows = table.find_all('tr')
 
     for r_idx, row in enumerate(rows):
+        if not isinstance(row, Tag):
+            continue
+
         col_idx = 0
         cells = row.find_all(['td', 'th'])
 
         for cell in cells:
+            if not isinstance(cell, Tag):
+                continue
+
             while grid.get((r_idx, col_idx)) is not None:
                 col_idx += 1
-            rowspan = int(cell.get('rowspan', '1'))
-            colspan = int(cell.get('colspan', '1'))
+
+            rs_attr = cell.get('rowspan', '1')
+            rowspan = int(rs_attr[0] if isinstance(rs_attr, list) else rs_attr)
+
+            cs_attr = cell.get('colspan', '1')
+            colspan = int(cs_attr[0] if isinstance(cs_attr, list) else cs_attr)
+
             for r in range(rowspan):
                 for c in range(colspan):
                     grid[(r_idx + r, col_idx + c)] = cell
@@ -245,7 +326,7 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
     for r_idx in range(1, len(rows)):
         time_cell = grid.get((r_idx, 0))
-        if time_cell:
+        if isinstance(time_cell, Tag):
             t_id = id(time_cell)
             if t_id not in time_to_rows:
                 time_to_rows[t_id] = {'cell': time_cell, 'indices': []}
@@ -263,14 +344,17 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
         target_cell = grid.get((active_r_idx, target_col))
 
-        if not target_cell or id(target_cell) in processed_cells:
+        if not isinstance(target_cell, Tag) or id(target_cell) in processed_cells:
             continue
 
         processed_cells.add(id(target_cell))
 
         time_div = time_cell.find('div', class_='LessonPeriod')
-        time_text = time_div.get_text(separator=' ', strip=True) if time_div else time_cell.get_text(separator=' ',
-                                                                                                     strip=True)
+        if isinstance(time_div, Tag):
+            time_text = time_div.get_text(separator=' ', strip=True)
+        else:
+            time_text = time_cell.get_text(separator=' ', strip=True)
+
         if not time_text:
             continue
 
@@ -278,14 +362,15 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
         subject_link = target_cell.find('a')
         subject_div = target_cell.find('div', class_='Subject')
 
-        if subject_link:
+        if isinstance(subject_link, Tag):
             subject_name = subject_link.get_text(separator=' ', strip=True)
-        elif subject_div:
+        elif isinstance(subject_div, Tag):
             subject_name = subject_div.get_text(separator=' ', strip=True)
         else:
             clone = copy.deepcopy(target_cell)
             for d in clone.find_all(['div', 'span', 'br'], class_=['Info', 'Notes', 'LessonType']):
-                d.decompose()
+                if isinstance(d, Tag):
+                    d.decompose()
             text = clone.get_text(separator=' ', strip=True)
             if text:
                 subject_name = text
@@ -295,12 +380,12 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
             notes_div = target_cell.find('div', class_='Notes')
 
             full_name = subject_name
-            if info_div:
+            if isinstance(info_div, Tag):
                 info_text = info_div.get_text(separator=' ', strip=True)
                 if info_text:
                     full_name += f" ({info_text})"
 
-            if notes_div:
+            if isinstance(notes_div, Tag):
                 notes_text = notes_div.get_text(separator=' ', strip=True)
                 if notes_text:
                     full_name += f" ❗️{notes_text}"
