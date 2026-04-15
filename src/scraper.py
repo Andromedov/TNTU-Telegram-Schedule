@@ -26,33 +26,52 @@ CACHE_TTL_MINUTES = 5
 
 def sanitize_group(group_name: str) -> str:
     """Замінює візуально схожі англійські літери на українські."""
-    mapping = {
+    mapping: Dict[str, str] = {
         'A': 'А', 'a': 'а', 'B': 'В', 'C': 'С', 'c': 'с', 'E': 'Е', 'e': 'е',
         'H': 'Н', 'I': 'І', 'i': 'і', 'K': 'К', 'k': 'к', 'M': 'М', 'm': 'м',
         'O': 'О', 'o': 'о', 'P': 'Р', 'p': 'р', 'T': 'Т', 't': 'т', 'X': 'Х', 'x': 'х'
     }
-    return "".join(mapping.get(ch, ch) for ch in group_name)
+    res: List[str] = []
+    for ch in group_name:
+        res.append(str(mapping.get(ch, ch)))
+    return "".join(res)
 
 
 def _transliterate_for_url(text: str) -> str:
     """Транслітерує назву групи для формування прямого URL."""
-    mapping = {
+    mapping: Dict[str, str] = {
         'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'e',
         'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'i', 'й': 'y', 'к': 'k',
         'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's',
         'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh',
         'щ': 'shch', 'ь': '', 'ю': 'yu', 'я': 'ya', '-': ''
     }
-    return "".join(mapping.get(char, char) for char in text.lower())
+    res: List[str] = []
+    for char in text.lower():
+        res.append(str(mapping.get(char, char)))
+    return "".join(res)
+
+
+def _extract_text(element: Tag) -> str:
+    """
+    Безпечно дістає текст з тегу BeautifulSoup, розділяючи елементи пробілами.
+    Це вирішує конфлікти типізації, пов'язані з методом get_text().
+    """
+    texts: List[str] = []
+    for t in element.strings:
+        s = str(t).strip()
+        if s:
+            texts.append(s)
+    return " ".join(texts)
 
 
 def _is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
     """Перевіряє, чи містить сторінка розклад для цільової групи (допоміжна функція)."""
-    if isinstance(soup.find('table', id='ScheduleWeek'), Tag):
+    if isinstance(soup.find('table', attrs={'id': 'ScheduleWeek'}), Tag):
         return True
 
     for h2 in soup.find_all('h2'):
-        if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(h2.get_text()).upper().replace('-', ''):
+        if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(_extract_text(h2)).upper().replace('-', ''):
             return True
 
     return False
@@ -60,10 +79,10 @@ def _is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> 
 
 def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     """Визначає, який тиждень (1 чи 2) буде в цільову дату."""
-    h3_black = soup.find('h3', class_='Black')
+    h3_black = soup.find('h3', attrs={'class': 'Black'})
     current_week = 1
     if isinstance(h3_black, Tag):
-        text = h3_black.get_text().lower()
+        text = _extract_text(h3_black).lower()
         if 'другий' in text:
             current_week = 2
 
@@ -150,8 +169,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
                             href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
 
                             if '.pdf' in href_str.lower():
-                                safe_text = sanitize_group(a_tag.get_text()).upper().replace('\xa0', ' ').replace('-',
-                                                                                                                  '')
+                                safe_text = sanitize_group(_extract_text(a_tag)).upper().replace('\xa0', ' ').replace('-', '')
                                 if clean_group_no_hyphen in safe_text:
                                     html_result = html
                                     break
@@ -181,14 +199,14 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
     clean_group_no_hyphen = sanitize_group(group_name).upper().replace('-', '')
 
     group_exists = False
-    table = soup.find('table', id='ScheduleWeek')
+    table = soup.find('table', attrs={'id': 'ScheduleWeek'})
 
     if not isinstance(table, Tag):
         table = None
         for tbl in soup.find_all('table'):
             if not isinstance(tbl, Tag):
                 continue
-            headers = [th.get_text(strip=True).lower() for th in tbl.find_all('th')]
+            headers = [_extract_text(th).lower() for th in tbl.find_all('th') if isinstance(th, Tag)]
             if any('понеділок' in h or 'вівторок' in h for h in headers):
                 table = tbl
                 break
@@ -197,7 +215,7 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
         group_exists = True
     else:
         for h2 in soup.find_all('h2'):
-            if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(h2.get_text()).upper().replace('-', ''):
+            if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(_extract_text(h2)).upper().replace('-', ''):
                 group_exists = True
                 break
 
@@ -214,7 +232,7 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
         href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
 
         if '.pdf' in href_str.lower():
-            raw_text = a_tag.get_text(strip=True)
+            raw_text = _extract_text(a_tag)
             safe_text = sanitize_group(raw_text).upper().replace('\xa0', ' ').replace('-', '')
 
             if ('ГРУПИ' in safe_text and clean_group_no_hyphen in safe_text) or (
@@ -254,7 +272,7 @@ async def check_schedule_changes(group_name: str) -> bool:
         if isinstance(el, Tag):
             el.decompose()
 
-    table_text = table.get_text(separator=' ', strip=True)
+    table_text = _extract_text(table)
     current_hash = hashlib.md5(table_text.encode('utf-8')).hexdigest()
 
     hashes = await asyncio.to_thread(_read_hashes_sync)
@@ -311,11 +329,21 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
             while grid.get((r_idx, col_idx)) is not None:
                 col_idx += 1
 
-            rs_attr = cell.get('rowspan', '1')
-            rowspan = int(rs_attr[0] if isinstance(rs_attr, list) else rs_attr)
+            rs_val = cell.get('rowspan')
+            if isinstance(rs_val, list):
+                rowspan = int(rs_val[0])
+            elif rs_val is not None:
+                rowspan = int(rs_val)
+            else:
+                rowspan = 1
 
-            cs_attr = cell.get('colspan', '1')
-            colspan = int(cs_attr[0] if isinstance(cs_attr, list) else cs_attr)
+            cs_val = cell.get('colspan')
+            if isinstance(cs_val, list):
+                colspan = int(cs_val[0])
+            elif cs_val is not None:
+                colspan = int(cs_val)
+            else:
+                colspan = 1
 
             for r in range(rowspan):
                 for c in range(colspan):
@@ -337,6 +365,9 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
     for t_id, data in time_to_rows.items():
         time_cell = data['cell']
+        if not isinstance(time_cell, Tag):
+            continue
+
         indices = data['indices']
 
         if len(indices) >= 2:
@@ -351,44 +382,44 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
         processed_cells.add(id(target_cell))
 
-        time_div = time_cell.find('div', class_='LessonPeriod')
+        time_div = time_cell.find('div', attrs={'class': 'LessonPeriod'})
         if isinstance(time_div, Tag):
-            time_text = time_div.get_text(separator=' ', strip=True)
+            time_text = _extract_text(time_div)
         else:
-            time_text = time_cell.get_text(separator=' ', strip=True)
+            time_text = _extract_text(time_cell)
 
         if not time_text:
             continue
 
         subject_name = ""
         subject_link = target_cell.find('a')
-        subject_div = target_cell.find('div', class_='Subject')
+        subject_div = target_cell.find('div', attrs={'class': 'Subject'})
 
         if isinstance(subject_link, Tag):
-            subject_name = subject_link.get_text(separator=' ', strip=True)
+            subject_name = _extract_text(subject_link)
         elif isinstance(subject_div, Tag):
-            subject_name = subject_div.get_text(separator=' ', strip=True)
+            subject_name = _extract_text(subject_div)
         else:
             clone = copy.deepcopy(target_cell)
-            for d in clone.find_all(['div', 'span', 'br'], class_=['Info', 'Notes', 'LessonType']):
+            for d in clone.find_all(['div', 'span', 'br'], attrs={'class': ['Info', 'Notes', 'LessonType']}):
                 if isinstance(d, Tag):
                     d.decompose()
-            text = clone.get_text(separator=' ', strip=True)
+            text = _extract_text(clone)
             if text:
                 subject_name = text
 
         if subject_name and subject_name not in ["-", ""]:
-            info_div = target_cell.find('div', class_='Info')
-            notes_div = target_cell.find('div', class_='Notes')
+            info_div = target_cell.find('div', attrs={'class': 'Info'})
+            notes_div = target_cell.find('div', attrs={'class': 'Notes'})
 
             full_name = subject_name
             if isinstance(info_div, Tag):
-                info_text = info_div.get_text(separator=' ', strip=True)
+                info_text = _extract_text(info_div)
                 if info_text:
                     full_name += f" ({info_text})"
 
             if isinstance(notes_div, Tag):
-                notes_text = notes_div.get_text(separator=' ', strip=True)
+                notes_text = _extract_text(notes_div)
                 if notes_text:
                     full_name += f" ❗️{notes_text}"
 
