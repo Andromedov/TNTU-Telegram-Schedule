@@ -25,9 +25,9 @@ async def send_evening_schedule(bot: Bot):
         if g and user['notify_evening']:
             if g not in groups:
                 groups[g] = []
-            groups[g].append(user['user_id'])
+            groups[g].append(user)
 
-    for group_name, user_ids in groups.items():
+    for group_name, group_users in groups.items():
         schedule = await scraper.parse_schedule_for_tomorrow(group_name)
 
         if schedule:
@@ -42,20 +42,17 @@ async def send_evening_schedule(bot: Bot):
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
-            for uid in user_ids:
-                fresh_user = await db.get_user(uid)
-                if fresh_user and not fresh_user['is_paused'] and fresh_user['notify_evening'] and fresh_user[
-                    'group_name'] == group_name:
-                    try:
-                        await bot.send_message(
-                            uid,
-                            text,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                            reply_markup=_get_dismiss_keyboard()
-                        )
-                    except Exception as e:
-                        logging.error(f"Не вдалося відправити повідомлення користувачу {uid}: {e}")
+            for user in group_users:
+                try:
+                    await bot.send_message(
+                        user['user_id'],
+                        text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                        reply_markup=_get_dismiss_keyboard()
+                    )
+                except Exception as e:
+                    logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
 
 async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str):
@@ -120,24 +117,21 @@ async def check_schedule_updates_task(bot: Bot):
         if g and user['notify_schedule_update']:
             if g not in groups:
                 groups[g] = []
-            groups[g].append(user['user_id'])
+            groups[g].append(user)
 
-    for group_name, user_ids in groups.items():
+    for group_name, group_users in groups.items():
         has_changes = await scraper.check_schedule_changes(group_name)
         if has_changes:
-            for uid in user_ids:
-                fresh_user = await db.get_user(uid)
-                if fresh_user and not fresh_user['is_paused'] and fresh_user.get('notify_schedule_update', 1) and \
-                        fresh_user['group_name'] == group_name:
-                    try:
-                        await bot.send_message(
-                            uid,
-                            get_msg("schedule.changed", "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"),
-                            parse_mode="HTML",
-                            reply_markup=_get_dismiss_keyboard()
-                        )
-                    except:
-                        pass
+            for user in group_users:
+                try:
+                    await bot.send_message(
+                        user['user_id'],
+                        get_msg("schedule.changed", "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"),
+                        parse_mode="HTML",
+                        reply_markup=_get_dismiss_keyboard()
+                    )
+                except:
+                    pass
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
