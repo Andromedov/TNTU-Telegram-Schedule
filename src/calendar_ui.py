@@ -32,7 +32,6 @@ def get_calendar_keyboard(year: int, month: int) -> InlineKeyboardMarkup:
                 row.append(InlineKeyboardButton(text=str(day), callback_data=f"cal:day:{year}:{month}:{day}"))
         kb.append(row)
 
-    # Швидкі кнопки (Пропозиція 3 інтегрована прямо сюди)
     kb.append([
         InlineKeyboardButton(text="🎯 Сьогодні", callback_data="cal:today"),
         InlineKeyboardButton(text="⏩ Завтра", callback_data="cal:tomorrow")
