@@ -14,6 +14,7 @@ from config import SENIOR_ID
 
 class UserState(StatesGroup):
     waiting_for_group = State()
+    waiting_for_date = State()
 
 
 class ScheduleBotHandlers:
@@ -53,7 +54,6 @@ class ScheduleBotHandlers:
     def get_main_keyboard() -> InlineKeyboardMarkup:
         """Головне меню бота."""
         kb = [
-            # Запускаємо навігацію з відступом 0 (сьогодні)
             [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
                                   callback_data="nav_schedule:0")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
@@ -96,6 +96,9 @@ class ScheduleBotHandlers:
                 InlineKeyboardButton(text="➡️", callback_data=f"nav_schedule:{offset + 1}")
             ],
             [
+                InlineKeyboardButton(text=get_msg('keyboard.custom_date', "📅 Обрати дату"), callback_data="ask_custom_date")
+            ],
+            [
                 InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")
             ]
         ]
@@ -114,6 +117,48 @@ class ScheduleBotHandlers:
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     # ==========================================
+    #            ГЕНЕРАЦІЯ РОЗКЛАДУ
+    # ==========================================
+
+    async def _generate_schedule_ui(self, user_id: int, offset: int) -> tuple[str, InlineKeyboardMarkup]:
+        """Генерує текст розкладу та клавіатуру для заданого offset (зміщення в днях)."""
+        user = await db.get_user(user_id)
+        if not user or not user['group_name']:
+            return get_msg("group.need_group", "Спочатку вкажіть групу!"), self.get_main_keyboard()
+
+        target_date = datetime.now() + timedelta(days=offset)
+        schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
+
+        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        day_name = weekdays[target_date.weekday()]
+        date_str = target_date.strftime("%d.%m.%Y")
+
+        relative_day = ""
+        if offset == 0:
+            relative_day = " (Сьогодні)"
+        elif offset == 1:
+            relative_day = " (Завтра)"
+        elif offset == -1:
+            relative_day = " (Вчора)"
+
+        text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
+
+        if not schedule:
+            text += get_msg("schedule.no_classes_today", "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).")
+        else:
+            has_pdf = False
+            for item in schedule:
+                if item.get('is_pdf'):
+                    if not has_pdf:
+                        text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
+                        has_pdf = True
+                    text += f"<b>{item['time']}</b> - {item['name']}\n"
+                else:
+                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+
+        return text, self.get_schedule_nav_keyboard(offset)
+
+    # ==========================================
     #            ОБРОБНИКИ КОМАНД
     # ==========================================
 
@@ -125,6 +170,7 @@ class ScheduleBotHandlers:
 
         user = await db.get_user(message.from_user.id)
         await self._cleanup_old_ui(message, state)
+        await state.set_state(None)
 
         if not user or not user['group_name']:
             await db.add_or_update_user(message.from_user.id)
@@ -153,6 +199,7 @@ class ScheduleBotHandlers:
             return
 
         await self._cleanup_old_ui(message, state)
+        await state.set_state(None)
 
         msg = await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
                                    parse_mode="HTML",
@@ -170,6 +217,7 @@ class ScheduleBotHandlers:
             return
 
         await self._cleanup_old_ui(message, state)
+        await state.set_state(None)
 
         msg = await message.answer("👑 <b>Адмін Панель</b>\nОберіть дію нижче:", parse_mode="HTML",
                                    reply_markup=self.get_admin_keyboard())
@@ -247,8 +295,67 @@ class ScheduleBotHandlers:
                 pass
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
+    async def process_custom_date_fsm(self, message: Message, state: FSMContext):
+        """Обробник введеної користувачем дати."""
+        date_str = message.text.strip()
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        data = await state.get_data()
+        prompt_msg_id = data.get("prompt_msg_id")
+        today_str = datetime.now().strftime("%d.%m.%Y")
+
+        try:
+            target_date = datetime.strptime(date_str, "%d.%m.%Y")
+        except ValueError:
+            error_text = get_msg("schedule.invalid_date",
+                                 "❌ <b>Неправильний формат дати!</b>\nБудь ласка, введіть дату у форматі ДД.ММ.РРРР\n<i>(наприклад, {today}):</i>",
+                                 today=today_str)
+            if prompt_msg_id:
+                try:
+                    await message.bot.edit_message_text(chat_id=message.chat.id, message_id=prompt_msg_id,
+                                                        text=error_text, parse_mode="HTML")
+                except Exception:
+                    pass
+            return
+
+        # Показуємо стан завантаження
+        loading_text = get_msg("schedule.loading", "⏳ Завантажую розклад...")
+        if prompt_msg_id:
+            try:
+                await message.bot.edit_message_text(chat_id=message.chat.id, message_id=prompt_msg_id,
+                                                    text=loading_text, parse_mode="HTML")
+            except Exception:
+                pass
+
+        # Визначаємо offset (різницю в днях від сьогодні), щоб кнопки "⬅️ ➡️" працювали коректно
+        now_date = datetime.now()
+        offset = (target_date.date() - now_date.date()).days
+
+        text, kb = await self._generate_schedule_ui(message.from_user.id, offset)
+
+        try:
+            if prompt_msg_id:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=prompt_msg_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=kb
+                )
+            else:
+                msg = await message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=kb)
+                await state.update_data(last_ui_msg_id=msg.message_id)
+        except Exception:
+            pass
+
+        await state.set_state(None)
+
     async def process_any_text(self, message: Message):
-        """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи."""
+        """Обробник для будь-якого тексту, якщо користувач не в стані зміни групи чи дати."""
         try:
             await message.delete()
         except Exception:
@@ -258,57 +365,30 @@ class ScheduleBotHandlers:
     #            ОБРОБНИКИ КОЛБЕКІВ
     # ==========================================
 
-    async def process_nav_schedule(self, callback: CallbackQuery):
+    async def process_nav_schedule(self, callback: CallbackQuery, state: FSMContext):
         """Обробник динамічного графіка розкладу з гортанням по днях."""
+        await state.set_state(None)
+
         user = await db.get_user(callback.from_user.id)
         if not user or not user['group_name']:
             await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
             return
 
-        # Отримуємо зміщення у днях (offset)
         offset = int(callback.data.split(":")[1])
-        target_date = datetime.now() + timedelta(days=offset)
 
         try:
             await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад..."))
         except TelegramBadRequest:
             pass
 
-        schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
-
-        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
-        day_name = weekdays[target_date.weekday()]
-        date_str = target_date.strftime("%d.%m.%Y")
-
-        relative_day = ""
-        if offset == 0:
-            relative_day = " (Сьогодні)"
-        elif offset == 1:
-            relative_day = " (Завтра)"
-        elif offset == -1:
-            relative_day = " (Вчора)"
-
-        text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
-
-        if not schedule:
-            text += get_msg("schedule.no_classes_today", "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).")
-        else:
-            has_pdf = False
-            for item in schedule:
-                if item.get('is_pdf'):
-                    if not has_pdf:
-                        text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
-                        has_pdf = True
-                    text += f"<b>{item['time']}</b> - {item['name']}\n"
-                else:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+        text, kb = await self._generate_schedule_ui(callback.from_user.id, offset)
 
         try:
             await callback.message.edit_text(
                 text,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
-                reply_markup=self.get_schedule_nav_keyboard(offset)
+                reply_markup=kb
             )
             await callback.answer("🔄 Оновлено!")
         except TelegramBadRequest as e:
@@ -317,7 +397,24 @@ class ScheduleBotHandlers:
             else:
                 await callback.answer()
 
-    async def process_show_settings(self, callback: CallbackQuery):
+    async def process_ask_custom_date(self, callback: CallbackQuery, state: FSMContext):
+        """Запитує у користувача дату для відображення розкладу."""
+        today_str = datetime.now().strftime("%d.%m.%Y")
+        text = get_msg("schedule.ask_date", "📅 Введіть дату у форматі <b>ДД.ММ.РРРР</b>\n<i>(наприклад, {today}):</i>",
+                       today=today_str)
+
+        # Кнопка "Назад" повертає на сьогоднішній розклад
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад"), callback_data="nav_schedule:0")]])
+
+        msg = await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+        await state.set_state(UserState.waiting_for_date)
+        await state.update_data(prompt_msg_id=msg.message_id)
+        await callback.answer()
+
+    async def process_show_settings(self, callback: CallbackQuery, state: FSMContext):
+        await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
         await callback.message.edit_text(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
                                          parse_mode="HTML",
@@ -330,7 +427,8 @@ class ScheduleBotHandlers:
         await state.update_data(prompt_msg_id=callback.message.message_id, last_ui_msg_id=callback.message.message_id)
         await callback.answer()
 
-    async def process_back_to_main(self, callback: CallbackQuery):
+    async def process_back_to_main(self, callback: CallbackQuery, state: FSMContext):
+        await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
         await callback.message.edit_text(
             get_msg("start.main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>", group=user['group_name']),
@@ -453,9 +551,11 @@ class ScheduleBotHandlers:
 
         # FSM (Очікування уводу)
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
+        self.router.message.register(self.process_custom_date_fsm, UserState.waiting_for_date)
 
         # Колбеки (кнопки)
         self.router.callback_query.register(self.process_nav_schedule, F.data.startswith("nav_schedule:"))
+        self.router.callback_query.register(self.process_ask_custom_date, F.data == "ask_custom_date")
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
