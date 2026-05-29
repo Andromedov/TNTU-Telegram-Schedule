@@ -7,6 +7,7 @@ import json
 import os
 import copy
 import asyncio
+import urllib.parse
 from typing import Optional, Tuple, List, Dict, Any
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
@@ -300,8 +301,17 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     if not group_exists:
         return schedule
 
-    formatted_pdfs = [{'time': '📄 PDF', 'name': f"<a href='{p['url']}'>{p['name']}</a>", 'is_pdf': True} for p in
-                      pdf_links]
+    formatted_pdfs = []
+    for p in pdf_links:
+        encoded_url = urllib.parse.quote(p['url'])
+        viewer_url = f"https://docs.google.com/viewer?url={encoded_url}"
+        formatted_pdfs.append({
+            'time': '📄 PDF',
+            'name': p['name'],
+            'url': p['url'],
+            'viewer_url': viewer_url,
+            'is_pdf': True
+        })
 
     if not soup:
         return formatted_pdfs
