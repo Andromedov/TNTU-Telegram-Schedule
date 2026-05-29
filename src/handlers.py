@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramBadRequest
 from datetime import datetime, timedelta
+import logging
 
 import database as db
 import scraper
@@ -87,7 +88,7 @@ class ScheduleBotHandlers:
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_schedule_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
+    def get_schedule_nav_keyboard(offset: int, extra_buttons: list = None) -> InlineKeyboardMarkup:
         """Клавіатура для навігації по днях."""
         kb = [
             [
@@ -97,11 +98,13 @@ class ScheduleBotHandlers:
             ],
             [
                 InlineKeyboardButton(text=get_msg('keyboard.custom_date', "📅 Обрати дату"), callback_data="ask_custom_date")
-            ],
-            [
-                InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")
             ]
         ]
+
+        if extra_buttons:
+            kb.extend(extra_buttons)
+
+        kb.append([InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")])
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
@@ -142,6 +145,7 @@ class ScheduleBotHandlers:
             relative_day = " (Вчора)"
 
         text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
+        pdf_buttons = []
 
         if not schedule:
             text += get_msg("schedule.no_classes_today", "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).")
@@ -152,11 +156,19 @@ class ScheduleBotHandlers:
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
                         has_pdf = True
-                    text += f"<b>{item['time']}</b> - {item['name']}\n"
+                    text += f"📄 <b>{item['name']}</b>\n"
+
+                    callback_data = f"send_pdf:{item['url']}"
+
+                    row = [InlineKeyboardButton(text="👀 Відкрити (Web)", url=item['viewer_url'])]
+                    if len(callback_data.encode('utf-8')) <= 64:
+                        row.append(InlineKeyboardButton(text="📩 Отримати файлом", callback_data=callback_data))
+
+                    pdf_buttons.append(row)
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
-        return text, self.get_schedule_nav_keyboard(offset)
+        return text, self.get_schedule_nav_keyboard(offset, pdf_buttons)
 
     # ==========================================
     #            ОБРОБНИКИ КОМАНД
@@ -452,6 +464,20 @@ class ScheduleBotHandlers:
         await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(updated_user))
         await callback.answer(get_msg("settings.updated", "Налаштування оновлено!"))
 
+    async def process_send_pdf(self, callback: CallbackQuery):
+        """Відправляє PDF файл як документ прямо в чат Telegram."""
+        url = callback.data.split(":", 1)[1]
+        await callback.answer("⏳ Завантажую файл...", show_alert=False)
+        try:
+            await callback.message.answer_document(
+                document=url,
+                caption="📄 <b>Ваш розклад</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logging.error(f"Помилка відправки PDF документу: {e}")
+            await callback.message.answer("❌ Не вдалося завантажити файл. Спробуйте натиснути '👀 Відкрити (Web)'.")
+
     async def process_delete_msg(self, callback: CallbackQuery):
         """Обробник для кнопки 'Прочитано', який просто видаляє повідомлення із чату."""
         try:
@@ -494,7 +520,7 @@ class ScheduleBotHandlers:
             for item in schedule:
                 if item.get('is_pdf'):
                     if not has_pdf: text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"; has_pdf = True
-                    text += f"📄 {item['name']}\n"
+                    text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
@@ -558,6 +584,7 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
         self.router.callback_query.register(self.process_toggles, F.data.startswith("toggle_"))
+        self.router.callback_query.register(self.process_send_pdf, F.data.startswith("send_pdf:"))
 
         # Реєстрація кнопки видалення повідомлення
         self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
