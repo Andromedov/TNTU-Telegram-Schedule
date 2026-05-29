@@ -66,11 +66,18 @@ class ScheduleBotHandlers:
     @staticmethod
     def get_settings_keyboard(user_data: dict) -> InlineKeyboardMarkup:
         """Меню налаштувань."""
+        notify_enabled = user_data.get('notify_10_min', 1)
+        offset = user_data.get('reminder_offset', 10)
+
+        # Динамічний текст для кнопки нагадувань
+        if notify_enabled:
+            time_text = f"1 год" if offset == 60 else (f"1.5 год" if offset == 90 else f"{offset} хв")
+            remind_text = f"✅ Нагадування ({time_text})"
+        else:
+            remind_text = "❌ Нагадування (Вимкнено)"
+
         kb = [
-            [InlineKeyboardButton(
-                text=f"{'✅' if user_data['notify_10_min'] else '❌'} {get_msg('keyboard.10_min', 'Нагадування за 10 хв')}",
-                callback_data="toggle_10_min"
-            )],
+            [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
             [InlineKeyboardButton(
                 text=f"{'✅' if user_data['notify_evening'] else '❌'} {get_msg('keyboard.evening', 'Розклад ввечері')}",
                 callback_data="toggle_evening"
@@ -84,6 +91,20 @@ class ScheduleBotHandlers:
                 callback_data="toggle_notify_schedule_update"
             )],
             [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_reminder_settings_keyboard() -> InlineKeyboardMarkup:
+        """Підменю вибору часу нагадування."""
+        kb = [
+            [InlineKeyboardButton(text="Вимкнути повністю ❌", callback_data="set_remind:0")],
+            [InlineKeyboardButton(text="10 хв", callback_data="set_remind:10"),
+             InlineKeyboardButton(text="15 хв", callback_data="set_remind:15"),
+             InlineKeyboardButton(text="30 хв", callback_data="set_remind:30")],
+            [InlineKeyboardButton(text="1 година", callback_data="set_remind:60"),
+             InlineKeyboardButton(text="1.5 години", callback_data="set_remind:90")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="show_settings")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -113,7 +134,6 @@ class ScheduleBotHandlers:
         kb = [
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
             [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
-            [InlineKeyboardButton(text="🧪 Тест: Нагадування (10 хв)", callback_data="admin_test_reminder")],
             [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
             [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")]
         ]
@@ -431,6 +451,34 @@ class ScheduleBotHandlers:
                                          reply_markup=self.get_settings_keyboard(user))
         await callback.answer()
 
+    async def process_settings_reminder(self, callback: CallbackQuery):
+        """Відкриває підменю вибору часу нагадування."""
+        await callback.message.edit_text(
+            "⏳ <b>Оберіть час нагадування перед початком пари:</b>",
+            parse_mode="HTML",
+            reply_markup=self.get_reminder_settings_keyboard()
+        )
+        await callback.answer()
+
+    async def process_set_remind(self, callback: CallbackQuery):
+        """Зберігає обраний час нагадування в БД."""
+        offset = int(callback.data.split(":")[1])
+        user_id = callback.from_user.id
+
+        if offset == 0:
+            await db.update_setting(user_id, 'notify_10_min', 0)
+        else:
+            await db.update_setting(user_id, 'notify_10_min', 1)
+            await db.update_setting(user_id, 'reminder_offset', offset)
+
+        updated_user = await db.get_user(user_id)
+        await callback.message.edit_text(
+            get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
+            parse_mode="HTML",
+            reply_markup=self.get_settings_keyboard(updated_user)
+        )
+        await callback.answer("Налаштування збережено!")
+
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову назву групи (наприклад, СТс-21):"))
         await state.set_state(UserState.waiting_for_group)
@@ -451,9 +499,8 @@ class ScheduleBotHandlers:
         user = await db.get_user(user_id)
 
         action = callback.data
-        if action == "toggle_10_min":
-            await db.update_setting(user_id, 'notify_10_min', 0 if user['notify_10_min'] else 1)
-        elif action == "toggle_evening":
+
+        if action == "toggle_evening":
             await db.update_setting(user_id, 'notify_evening', 0 if user['notify_evening'] else 1)
         elif action == "toggle_pause":
             await db.update_setting(user_id, 'is_paused', 0 if user['is_paused'] else 1)
@@ -532,16 +579,6 @@ class ScheduleBotHandlers:
         else:
             await callback.answer("На завтра пар немає (або помилка парсингу).", show_alert=True)
 
-    async def process_admin_test_reminder(self, callback: CallbackQuery):
-        if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
-
-        text = get_msg("reminders.10_min", "⏳ За 10 хвилин почнеться пара:\n<b>{subject_name}</b>",
-                       subject_name="🧪 Тестовий Предмет (Лекція)")
-        await callback.message.answer(f"🧪 <i>ТЕСТ Нагадування</i>\n\n{text}", parse_mode="HTML",
-                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                          [InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
-        await callback.answer("Успішно відправлено.")
-
     async def process_admin_test_update(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
         user = await db.get_user(SENIOR_ID)
@@ -581,6 +618,11 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_calendar_selection, F.data.startswith("cal:"))
         self.router.callback_query.register(self.process_ask_custom_date, F.data == "ask_custom_date")
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
+
+        # Раути для кастомного нагадування
+        self.router.callback_query.register(self.process_settings_reminder, F.data == "settings_reminder")
+        self.router.callback_query.register(self.process_set_remind, F.data.startswith("set_remind:"))
+
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
         self.router.callback_query.register(self.process_toggles, F.data.startswith("toggle_"))
@@ -592,7 +634,6 @@ class ScheduleBotHandlers:
         # Адмінські колбеки
         self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")
         self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
-        self.router.callback_query.register(self.process_admin_test_reminder, F.data == "admin_test_reminder")
         self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")
 
         # Текстові повідомлення (fallback)

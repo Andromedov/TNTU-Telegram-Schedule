@@ -64,7 +64,7 @@ async def promote_groups(bot: Bot):
             suffix = match.group(3)
 
             new_year = year + 1
-            if new_year > 6:  # Зазвичай не більше 5-6 курсів (Магістратура)
+            if new_year > 6:
                 continue
 
             new_group = f"{prefix}{new_year}{suffix}"
@@ -100,7 +100,7 @@ async def promote_groups(bot: Bot):
 async def send_evening_schedule(bot: Bot):
     """Відправляє розклад на завтра кожного вечора."""
     tomorrow = datetime.now() + timedelta(days=1)
-    is_active_semester = is_active_study_period(tomorrow)
+    is_active_semester = await is_active_study_period(tomorrow)
     is_weekend = tomorrow.weekday() in [5, 6]  # Субота та Неділя
 
     users = await db.get_active_users()
@@ -122,9 +122,7 @@ async def send_evening_schedule(bot: Bot):
         has_actual_classes = any(not item.get('is_pdf') for item in schedule)
 
         if not has_actual_classes:
-            if is_weekend:
-                continue
-            if not is_active_semester:
+            if is_weekend or not is_active_semester:
                 continue
 
         text = get_msg("schedule.evening_title", "🌙 <b>Розклад на завтра:</b>") + "\n"
@@ -151,17 +149,31 @@ async def send_evening_schedule(bot: Bot):
                 logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
 
-async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str):
+async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str, offset: int):
     """Відправляє нагадування про конкретну пару."""
     user = await db.get_user(user_id)
 
     if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
         return
 
+    if offset >= 60:
+        hours = offset // 60
+        mins = offset % 60
+        time_str = f"{hours} год" + (f" {mins} хв" if mins else "")
+    else:
+        time_str = f"{offset} хв"
+
+    text = get_msg(
+        "reminders.class_starts",
+        "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
+        time_str=time_str,
+        subject_name=subject_name
+    )
+
     try:
         await bot.send_message(
             user_id,
-            get_msg("reminders.10_min", "⏳ За 10 хвилин почнеться пара:\n<b>{subject_name}</b>", subject_name=subject_name),
+            text,
             parse_mode="HTML",
             reply_markup=_get_dismiss_keyboard()
         )
@@ -171,16 +183,21 @@ async def send_10_min_reminder(bot: Bot, user_id: int, subject_name: str, schedu
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     users = await db.get_active_users()
-    groups = {}
+
+    # Групуємо користувачів за групою ТА їхнім часом нагадування
+    # Формат: { ('СТс-21', 10): [user_id1, user_id2], ('СТс-21', 30): [user_id3] }
+    tasks = {}
 
     for user in users:
         g = user['group_name']
         if g and user['notify_10_min']:
-            if g not in groups:
-                groups[g] = []
-            groups[g].append(user['user_id'])
+            offset = user.get('reminder_offset', 10)
+            key = (g, offset)
+            if key not in tasks:
+                tasks[key] = []
+            tasks[key].append(user['user_id'])
 
-    for group_name, user_ids in groups.items():
+    for (group_name, offset), user_ids in tasks.items():
         schedule = await scraper.parse_schedule_for_today(group_name)
 
         for item in schedule:
@@ -191,15 +208,15 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
             try:
                 now = datetime.now()
                 class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]), second=0)
-                reminder_time = class_time - timedelta(minutes=10)
+                reminder_time = class_time - timedelta(minutes=offset)
 
                 if reminder_time > now:
                     for uid in user_ids:
                         scheduler.add_job(
-                            send_10_min_reminder,
+                            send_class_reminder,
                             'date',
                             run_date=reminder_time,
-                            args=[bot, uid, item['name'], group_name]
+                            args=[bot, uid, item['name'], group_name, offset]
                         )
             except Exception as e:
                 logging.error(f"Помилка створення задачі: {e}")

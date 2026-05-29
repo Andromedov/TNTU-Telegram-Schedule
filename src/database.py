@@ -6,6 +6,7 @@ import logging
 EXPECTED_COLUMNS = {
     'group_name': 'TEXT',
     'notify_10_min': 'BOOLEAN DEFAULT 1',
+    'reminder_offset': 'INTEGER DEFAULT 10',
     'notify_evening': 'BOOLEAN DEFAULT 1',
     'is_paused': 'BOOLEAN DEFAULT 0',
     'notify_schedule_update': 'BOOLEAN DEFAULT 1'
