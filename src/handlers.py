@@ -1,5 +1,6 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, \
+    BufferedInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -12,6 +13,7 @@ import scraper
 from messages import get_msg
 from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
+from ics_generator import generate_week_ics
 
 
 class UserState(StatesGroup):
@@ -137,6 +139,9 @@ class ScheduleBotHandlers:
                 InlineKeyboardButton(text="⬅️ Тиждень", callback_data=f"nav_week:{offset - 1}"),
                 InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_week:{offset}"),
                 InlineKeyboardButton(text="Тиждень ➡️", callback_data=f"nav_week:{offset + 1}")
+            ],
+            [
+                InlineKeyboardButton(text="📲 Експорт в календар (.ics)", callback_data=f"export_ics:{offset}")
             ]
         ]
 
@@ -439,7 +444,7 @@ class ScheduleBotHandlers:
             await callback.answer("🔄 Оновлено!")
         except TelegramBadRequest as e:
             if "message is not modified" in str(e).lower():
-                await callback.answer("✅ Розклад актуальний (змін немає).")
+                await callback.answer("✅ Розклад актуальний.")
             else:
                 await callback.answer()
 
@@ -474,6 +479,60 @@ class ScheduleBotHandlers:
                 await callback.answer("✅ Розклад актуальний.")
             else:
                 await callback.answer()
+
+    async def process_export_ics(self, callback: CallbackQuery):
+        """Обробник експорту розкладу у файл .ics."""
+        await callback.answer("⏳ Генерую файл для календаря...", show_alert=False)
+
+        user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            return
+
+        offset_weeks = int(callback.data.split(":")[1])
+        now = datetime.now()
+        monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
+
+        schedule_data = {}
+        for i in range(7):
+            current_date = monday + timedelta(days=i)
+            schedule = await scraper._get_schedule_for_date(user['group_name'], current_date)
+            if schedule:
+                schedule_data[current_date] = schedule
+
+        ics_content = generate_week_ics(user['group_name'], schedule_data)
+
+        if not ics_content.strip() or "BEGIN:VEVENT" not in ics_content:
+            await callback.message.answer("❌ На цей тиждень немає пар для експорту.")
+            return
+
+        file = BufferedInputFile(
+            ics_content.encode('utf-8'),
+            filename=f"Schedule_{user['group_name']}_{monday.strftime('%d_%m')}.ics"
+        )
+
+        tutorial_text = (
+            "📲 <b>Ваш файл розкладу готовий!</b>\n\n"
+            "<b>Як додати розклад у свій телефон:</b>\n"
+            "<b>🍏 iOS (iPhone):</b>\n"
+            "1. Натисніть на файл.\n"
+            "2. У верхньому правому куті натисніть <i>«Поділитися»</i> (квадрат зі стрілочкою).\n"
+            "3. Оберіть ваш Календар та натисніть <i>«Додати всі»</i>.\n\n"
+            "<b>🤖 Android:</b>\n"
+            "1. Завантажте файл, натиснувши на нього.\n"
+            "2. Відкрийте файл — зазвичай Google Календар сам запропонує імпортувати події.\n"
+            "3. Якщо ні, відкрийте свій Календар -> Налаштування -> Імпорт та оберіть цей файл.\n\n"
+            "<i>💡 Порада: Файл містить пари лише на обраний тиждень.</i>"
+        )
+
+        try:
+            await callback.message.answer_document(
+                document=file,
+                caption=tutorial_text,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logging.error(f"Помилка відправки ICS файлу: {e}")
+            await callback.message.answer("❌ Сталася помилка при створенні файлу.")
 
     async def process_ask_custom_date(self, callback: CallbackQuery, state: FSMContext):
         """Відображає інлайн-календар для вибору дати."""
@@ -725,6 +784,10 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_nav_week, F.data.startswith("nav_week:"))
         self.router.callback_query.register(self.process_calendar_selection, F.data.startswith("cal:"))
         self.router.callback_query.register(self.process_ask_custom_date, F.data == "ask_custom_date")
+
+        # Додано роут для експорту в календар
+        self.router.callback_query.register(self.process_export_ics, F.data.startswith("export_ics:"))
+
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
 
         # Раути для кастомного нагадування
