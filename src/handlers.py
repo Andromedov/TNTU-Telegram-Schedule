@@ -55,8 +55,10 @@ class ScheduleBotHandlers:
     def get_main_keyboard() -> InlineKeyboardMarkup:
         """Головне меню бота."""
         kb = [
-            [InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 Мій розклад"),
-                                  callback_data="nav_schedule:0")],
+            [
+                InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 На день"), callback_data="nav_schedule:0"),
+                InlineKeyboardButton(text="🗓 На тиждень", callback_data="nav_week:0")
+            ],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
                                   callback_data="change_group")]
@@ -129,6 +131,22 @@ class ScheduleBotHandlers:
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
+    def get_week_nav_keyboard(offset: int, extra_buttons: list = None) -> InlineKeyboardMarkup:
+        kb = [
+            [
+                InlineKeyboardButton(text="⬅️ Тиждень", callback_data=f"nav_week:{offset - 1}"),
+                InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_week:{offset}"),
+                InlineKeyboardButton(text="Тиждень ➡️", callback_data=f"nav_week:{offset + 1}")
+            ]
+        ]
+
+        if extra_buttons:
+            kb.extend(extra_buttons)
+
+        kb.append([InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")])
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
     def get_admin_keyboard() -> InlineKeyboardMarkup:
         """Клавіатура адмін-панелі."""
         kb = [
@@ -189,6 +207,63 @@ class ScheduleBotHandlers:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
         return text, self.get_schedule_nav_keyboard(offset, pdf_buttons)
+
+    async def _generate_week_schedule_ui(self, user_id: int, offset_weeks: int) -> tuple[str, InlineKeyboardMarkup]:
+        """Генерує розклад на весь тиждень (Пн-Нд)."""
+        user = await db.get_user(user_id)
+        if not user or not user['group_name']:
+            return get_msg("group.need_group", "Спочатку вкажіть групу!"), self.get_main_keyboard()
+
+        now = datetime.now()
+        monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
+        sunday = monday + timedelta(days=6)
+
+        date_range_str = f"{monday.strftime('%d.%m')} - {sunday.strftime('%d.%m')}"
+
+        text = f"🗓 <b>Розклад на тиждень ({date_range_str})</b>\n🎓 Група: <b>{user['group_name']}</b>\n\n"
+
+        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+
+        all_pdfs = {}
+        has_any_classes = False
+
+        for i in range(7):
+            current_date = monday + timedelta(days=i)
+            schedule = await scraper._get_schedule_for_date(user['group_name'], current_date)
+
+            day_classes = []
+            for item in schedule:
+                if item.get('is_pdf'):
+                    # Уникаємо дублювання PDF файлів
+                    all_pdfs[item['url']] = item
+                else:
+                    day_classes.append(item)
+
+            if day_classes:
+                has_any_classes = True
+                text += f"🔹 <b>{weekdays[i]} ({current_date.strftime('%d.%m')}):</b>\n"
+                for item in day_classes:
+                    text += f"  ⏰ <b>{item['time']}</b> - {item['name']}\n"
+                text += "\n"
+
+        if not has_any_classes:
+            text += "🏖 <b>На цей тиждень пар немає.</b>\n\n"
+
+        pdf_buttons = []
+        if all_pdfs:
+            text += f"<s>{'—' * 25}</s>\n\n"
+            for pdf in all_pdfs.values():
+                text += f"📄 <b>{pdf['name']}</b>\n"
+                callback_data = f"send_pdf:{pdf['url']}"
+                row = [InlineKeyboardButton(text="👀 Відкрити (Web)", url=pdf['viewer_url'])]
+                if len(callback_data.encode('utf-8')) <= 64:
+                    row.append(InlineKeyboardButton(text="📩 Отримати", callback_data=callback_data))
+                pdf_buttons.append(row)
+
+        if len(text) > 4000:
+            text = text[:4000] + "\n... (розклад занадто довгий)"
+
+        return text, self.get_week_nav_keyboard(offset_weeks, pdf_buttons)
 
     # ==========================================
     #            ОБРОБНИКИ КОМАНД
@@ -365,6 +440,38 @@ class ScheduleBotHandlers:
         except TelegramBadRequest as e:
             if "message is not modified" in str(e).lower():
                 await callback.answer("✅ Розклад актуальний (змін немає).")
+            else:
+                await callback.answer()
+
+    async def process_nav_week(self, callback: CallbackQuery, state: FSMContext):
+        """Обробник розкладу на тиждень."""
+        await state.set_state(None)
+
+        user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            return
+
+        offset = int(callback.data.split(":")[1])
+
+        try:
+            await callback.message.edit_text(get_msg("schedule.loading", "⏳ Формую розклад на тиждень..."))
+        except TelegramBadRequest:
+            pass
+
+        text, kb = await self._generate_week_schedule_ui(callback.from_user.id, offset)
+
+        try:
+            await callback.message.edit_text(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=kb
+            )
+            await callback.answer("🔄 Оновлено!")
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                await callback.answer("✅ Розклад актуальний.")
             else:
                 await callback.answer()
 
@@ -615,6 +722,7 @@ class ScheduleBotHandlers:
 
         # Колбеки (кнопки)
         self.router.callback_query.register(self.process_nav_schedule, F.data.startswith("nav_schedule:"))
+        self.router.callback_query.register(self.process_nav_week, F.data.startswith("nav_week:"))
         self.router.callback_query.register(self.process_calendar_selection, F.data.startswith("cal:"))
         self.router.callback_query.register(self.process_ask_custom_date, F.data == "ask_custom_date")
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
