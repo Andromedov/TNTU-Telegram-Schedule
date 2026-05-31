@@ -78,13 +78,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                 continue
 
             new_group = f"{prefix}{new_year}{suffix}"
-
-            exists = await scraper.check_group_exists(new_group)
-            if exists:
-                group_mapping[group] = new_group
-            else:
-                # Якщо нова група не знайдена (напр. бакалаври 4 курс -> 5 курс), вважаємо випускниками
-                group_mapping[group] = "GRADUATED"
+            group_mapping[group] = new_group
 
     if dry_run:
         for group, new_g in group_mapping.items():
@@ -234,13 +228,14 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     tasks = {}
 
     for user in users:
-        g = user['group_name']
-        if g and user['notify_10_min']:
-            offset = user.get('reminder_offset', 10)
+        user_dict = dict(user)
+        g = user_dict['group_name']
+        if g and user_dict.get('notify_10_min', 1):
+            offset = user_dict.get('reminder_offset', 10)
             key = (g, offset)
             if key not in tasks:
                 tasks[key] = []
-            tasks[key].append(user['user_id'])
+            tasks[key].append(user_dict['user_id'])
 
     for (group_name, offset), user_ids in tasks.items():
         schedule = await scraper.parse_schedule_for_today(group_name)

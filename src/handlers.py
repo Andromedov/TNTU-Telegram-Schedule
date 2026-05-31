@@ -88,10 +88,11 @@ class ScheduleBotHandlers:
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_settings_keyboard(user_data: dict) -> InlineKeyboardMarkup:
+    def get_settings_keyboard(user_data) -> InlineKeyboardMarkup:
         """Меню налаштувань."""
-        notify_enabled = user_data.get('notify_10_min', 1)
-        offset = user_data.get('reminder_offset', 10)
+        user_dict = dict(user_data)
+        notify_enabled = user_dict.get('notify_10_min', 1)
+        offset = user_dict.get('reminder_offset', 10)
 
         if not notify_enabled:
             remind_text = "❌ Нагадування (Вимкнено)"
@@ -105,15 +106,15 @@ class ScheduleBotHandlers:
         kb = [
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
             [InlineKeyboardButton(
-                text=f"{'✅' if user_data['notify_evening'] else '❌'} {get_msg('keyboard.evening', 'Розклад ввечері')}",
+                text=f"{'✅' if user_dict.get('notify_evening', 1) else '❌'} {get_msg('keyboard.evening', 'Розклад ввечері')}",
                 callback_data="toggle_evening"
             )],
             [InlineKeyboardButton(
-                text=f"{'⏸' if user_data['is_paused'] else '▶️'} {get_msg('keyboard.pause', 'Пауза сповіщень')}",
+                text=f"{'⏸' if user_dict.get('is_paused', 0) else '▶️'} {get_msg('keyboard.pause', 'Пауза сповіщень')}",
                 callback_data="toggle_pause"
             )],
             [InlineKeyboardButton(
-                text=f"{'✅' if user_data['notify_schedule_update'] else '❌'} {get_msg('keyboard.schedule_update', 'Сповіщення про оновлення розкладу')}",
+                text=f"{'✅' if user_dict.get('notify_schedule_update', 1) else '❌'} {get_msg('keyboard.schedule_update', 'Сповіщення про оновлення розкладу')}",
                 callback_data="toggle_notify_schedule_update"
             )],
             [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
@@ -640,10 +641,8 @@ class ScheduleBotHandlers:
             return
         next_class = await self._get_next_class_text(user['group_name'])
         await callback.message.edit_text(
-            get_msg("start.main_menu_title",
-                    "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}",
-                    group=user['group_name'],
-                    next_class=next_class),
+            get_msg("start.main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}",
+                    group=user['group_name'], next_class=next_class),
             parse_mode="HTML",
             reply_markup=self.get_main_keyboard())
         await callback.answer()
@@ -749,7 +748,8 @@ class ScheduleBotHandlers:
             await callback.answer("Вкажіть групу для тесту!", show_alert=True)
             return
 
-        offset = user.get('reminder_offset', 10)
+        user_dict = dict(user)
+        offset = user_dict.get('reminder_offset', 10)
         time_str = f"{offset} хв"
         text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
                        time_str=time_str, subject_name="[ТЕСТ] Основи програмування")
