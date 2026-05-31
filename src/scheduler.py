@@ -49,7 +49,13 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
     graduated_count = 0
     report = []
 
-    unique_groups = {u['group_name'] for u in users if u['group_name']}
+    group_counts = {}
+    for u in users:
+        g = u['group_name']
+        if g:
+            group_counts[g] = group_counts.get(g, 0) + 1
+
+    unique_groups = set(group_counts.keys())
     group_mapping = {}
 
     pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d)(.*)$")
@@ -77,7 +83,8 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
 
     if dry_run:
         for group, new_g in group_mapping.items():
-            report.append(f"{group} -> {new_g}")
+            count = group_counts.get(group, 0)
+            report.append(f"{group} -> {new_g} (користувачів: {count})")
         return "\n".join(report) if report else "Немає груп для переведення."
 
     for user in users:
