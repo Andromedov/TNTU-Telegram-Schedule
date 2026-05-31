@@ -92,8 +92,15 @@ class ScheduleBotHandlers:
         """Меню налаштувань."""
         notify_enabled = user_data.get('notify_10_min', 1)
         offset = user_data.get('reminder_offset', 10)
-        remind_text = f"✅ Нагадування (1 год)" if offset == 60 else (f"✅ Нагадування (1.5 год)" if offset == 90 else (
-            f"✅ Нагадування ({offset} хв)" if notify_enabled else "❌ Нагадування (Вимкнено)"))
+
+        if not notify_enabled:
+            remind_text = "❌ Нагадування (Вимкнено)"
+        elif offset == 60:
+            remind_text = "✅ Нагадування (1 год)"
+        elif offset == 90:
+            remind_text = "✅ Нагадування (1.5 год)"
+        else:
+            remind_text = f"✅ Нагадування ({offset} хв)"
 
         kb = [
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
@@ -208,7 +215,15 @@ class ScheduleBotHandlers:
         day_name = weekdays[target_date.weekday()]
         date_str = target_date.strftime("%d.%m.%Y")
 
-        relative_day = " (Сьогодні)" if offset == 0 else (" (Завтра)" if offset == 1 else (" (Вчора)" if offset == -1 else ""))
+        if offset == 0:
+            relative_day = " (Сьогодні)"
+        elif offset == 1:
+            relative_day = " (Завтра)"
+        elif offset == -1:
+            relative_day = " (Вчора)"
+        else:
+            relative_day = ""
+
         text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
         pdf_buttons = []
 
@@ -496,9 +511,17 @@ class ScheduleBotHandlers:
 
         file = BufferedInputFile(ics_content.encode('utf-8'),
                                  filename=f"Schedule_{user['group_name']}_{monday.strftime('%d_%m')}.ics")
+
+        caption_text = (
+            "📲 <b>Ваш файл розкладу готовий!</b>\n\n"
+            "💡 <i>Як додати в календар:</i>\n"
+            "1. Завантажте цей файл.\n"
+            "2. Відкрийте його на своєму пристрої.\n"
+            "3. Натисніть «Додати всі події» (або аналогічну кнопку)."
+        )
+
         try:
-            await callback.message.answer_document(document=file, caption="📲 <b>Ваш файл розкладу готовий!</b>",
-                                                   parse_mode="HTML")
+            await callback.message.answer_document(document=file, caption=caption_text, parse_mode="HTML")
         except Exception as e:
             logging.error(f"Помилка відправки ICS файлу: {e}")
             await callback.message.answer("❌ Сталася помилка при створенні файлу.")
@@ -606,7 +629,10 @@ class ScheduleBotHandlers:
         user = await db.get_user(callback.from_user.id)
         next_class = await self._get_next_class_text(user['group_name'])
         await callback.message.edit_text(
-            get_msg("start.main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}", group=user['group_name'], next_class=next_class),
+            get_msg("start.main_menu_title",
+                    "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}",
+                    group=user['group_name'],
+                    next_class=next_class),
             parse_mode="HTML",
             reply_markup=self.get_main_keyboard())
         await callback.answer()
@@ -658,8 +684,10 @@ class ScheduleBotHandlers:
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
         stats = await db.get_statistics()
         text = f"📊 <b>Статистика:</b>\n👥 Всього: <b>{stats['total']}</b>\n🟢 Активних: <b>{stats['active']}</b>\n\n🏆 <b>Топ 5:</b>\n"
-        for idx, group in enumerate(stats['top_groups'],
-                                    1): text += f"{idx}. {group['group_name']} ({group['count']})\n"
+
+        for idx, group in enumerate(stats['top_groups'], 1):
+            text += f"{idx}. {group['group_name']} ({group['count']})\n"
+
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=self.get_admin_keyboard())
         await callback.answer()
 
