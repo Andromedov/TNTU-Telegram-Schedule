@@ -4,5 +4,4 @@ beautifulsoup4>=4.14.3
 APScheduler>=3.11.2
 aiosqlite>=0.22.1
 python-dotenv>=1.2.1
-ics>=0.8.0.dev1
 pytz>=2026.2
