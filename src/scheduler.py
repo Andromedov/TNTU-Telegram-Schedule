@@ -1,3 +1,5 @@
+from typing import LiteralString
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -40,21 +42,17 @@ async def is_active_study_period(target_date: datetime) -> bool:
     return True
 
 
-async def promote_groups(bot: Bot):
-    """
-    Запускається щорічно 1-го серпня.
-    Автоматично переводить студентів на наступний курс (напр. СТс-21 -> СТс-31).
-    """
-    logging.info("Запуск автоматичного переведення груп на новий навчальний рік...")
+async def process_promotion(bot: Bot, dry_run: bool = False):
+    """Ядро логіки переведення студентів. dry_run=True лише повертає звіт."""
     users = await db.get_all_users()
     promoted_count = 0
+    graduated_count = 0
+    report = []
 
-    # Знаходимо унікальні групи, щоб не перевіряти одну й ту ж через scraper сотні разів
     unique_groups = {u['group_name'] for u in users if u['group_name']}
     group_mapping = {}
 
-    # Регулярка для пошуку: префікс з літер (СТс-), цифра курсу (2), решта (1)
-    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-)(\d)(\d*)$")
+    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d)(.*)$")
 
     for group in unique_groups:
         match = pattern.match(group)
@@ -65,43 +63,75 @@ async def promote_groups(bot: Bot):
 
             new_year = year + 1
             if new_year > 6:
+                group_mapping[group] = "GRADUATED"
                 continue
 
             new_group = f"{prefix}{new_year}{suffix}"
 
-            # Перевіряємо, чи вже завантажили цю нову групу на сайт ТНТУ
             exists = await scraper.check_group_exists(new_group)
             if exists:
                 group_mapping[group] = new_group
+            else:
+                # Якщо нова група не знайдена (напр. бакалаври 4 курс -> 5 курс), вважаємо випускниками
+                group_mapping[group] = "GRADUATED"
 
-    # Оновлюємо базу даних та розсилаємо привітання
+    if dry_run:
+        for group, new_g in group_mapping.items():
+            report.append(f"{group} -> {new_g}")
+        return "\n".join(report) if report else "Немає груп для переведення."
+
     for user in users:
         old_group = user['group_name']
         if old_group in group_mapping:
             new_group = group_mapping[old_group]
-            await db.add_or_update_user(user['user_id'], new_group)
 
-            try:
-                await bot.send_message(
-                    user['user_id'],
-                    f"🎓 <b>Вітаємо з новим навчальним роком!</b>\n\n"
-                    f"Вашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>.\n"
-                    f"<i>Якщо ви завершили навчання або перейшли в іншу групу, ви можете змінити її в налаштуваннях.</i>",
-                    parse_mode="HTML",
-                    reply_markup=_get_dismiss_keyboard()
-                )
-                promoted_count += 1
-            except Exception as e:
-                logging.error(f"Не вдалося відправити повідомлення про переведення {user['user_id']}: {e}")
+            if new_group == "GRADUATED":
+                try:
+                    await bot.send_message(
+                        user['user_id'],
+                        f"🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\n"
+                        f"Група <b>{old_group}</b> більше не доступна на сайті розкладу.\n"
+                        f"<i>Якщо ви продовжуєте навчання в іншій групі (наприклад, магістратурі), змініть групу в налаштуваннях бота.</i>",
+                        parse_mode="HTML",
+                        reply_markup=_get_dismiss_keyboard()
+                    )
+                    # Очищаємо групу, щоб не спамити помилками надалі
+                    await db.add_or_update_user(user['user_id'], None)
+                    graduated_count += 1
+                except Exception:
+                    pass
+            else:
+                await db.add_or_update_user(user['user_id'], new_group)
+                try:
+                    await bot.send_message(
+                        user['user_id'],
+                        f"🎓 <b>Вітаємо з новим навчальним роком!</b>\n\n"
+                        f"Вашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>.",
+                        parse_mode="HTML",
+                        reply_markup=_get_dismiss_keyboard()
+                    )
+                    promoted_count += 1
+                except Exception:
+                    pass
 
-    logging.info(f"Переведення завершено. Оновлено {promoted_count} студентів.")
+    logging.info(f"Переведення завершено. Оновлено: {promoted_count}, Випущено: {graduated_count}.")
+    return None
+
+
+async def promote_groups(bot: Bot):
+    logging.info("Запуск автоматичного переведення груп на новий навчальний рік...")
+    await process_promotion(bot, dry_run=False)
+
+
+async def promote_groups_dry_run(bot: Bot) -> LiteralString | str | None:
+    return await process_promotion(bot, dry_run=True)
 
 
 async def send_evening_schedule(bot: Bot):
     """Відправляє розклад на завтра кожного вечора."""
     tomorrow = datetime.now() + timedelta(days=1)
     is_active_semester = await is_active_study_period(tomorrow)
-    is_weekend = tomorrow.weekday() in [5, 6]  # Субота та Неділя
+    is_weekend = tomorrow.weekday() in [5, 6]
 
     users = await db.get_active_users()
     groups = {}
@@ -156,19 +186,9 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
         return
 
-    if offset >= 60:
-        hours = offset // 60
-        mins = offset % 60
-        time_str = f"{hours} год" + (f" {mins} хв" if mins else "")
-    else:
-        time_str = f"{offset} хв"
-
-    text = get_msg(
-        "reminders.class_starts",
-        "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
-        time_str=time_str,
-        subject_name=subject_name
-    )
+    time_str = f"{offset // 60} год" + (f" {offset % 60} хв" if offset % 60 else "") if offset >= 60 else f"{offset} хв"
+    text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
+                   time_str=time_str, subject_name=subject_name)
 
     try:
         await bot.send_message(
@@ -183,9 +203,6 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     users = await db.get_active_users()
-
-    # Групуємо користувачів за групою ТА їхнім часом нагадування
-    # Формат: { ('СТс-21', 10): [user_id1, user_id2], ('СТс-21', 30): [user_id3] }
     tasks = {}
 
     for user in users:
@@ -201,9 +218,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
         schedule = await scraper.parse_schedule_for_today(group_name)
 
         for item in schedule:
-            if item.get('is_pdf', False):
-                continue
-
+            if item.get('is_pdf', False): continue
             time_parts = item['time'].split('-')[0].split(':')
             try:
                 now = datetime.now()
