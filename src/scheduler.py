@@ -56,7 +56,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
     unique_groups = set(group_counts.keys())
     group_mapping = {}
 
-    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d)(.*)$")
+    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)$")
 
     for group in unique_groups:
         match = pattern.match(group)

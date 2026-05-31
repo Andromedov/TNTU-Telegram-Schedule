@@ -627,6 +627,12 @@ class ScheduleBotHandlers:
     async def process_back_to_main(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            await callback.message.edit_text(get_msg("group.need_group", "Спочатку вкажіть групу!"),
+                parse_mode="HTML",
+                reply_markup=self.get_main_keyboard()
+            )
+            return
         next_class = await self._get_next_class_text(user['group_name'])
         await callback.message.edit_text(
             get_msg("start.main_menu_title",
