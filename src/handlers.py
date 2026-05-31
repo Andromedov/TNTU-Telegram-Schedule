@@ -30,7 +30,9 @@ def _get_pdf_key(url: str) -> str:
     key = hashlib.md5(url.encode('utf-8')).hexdigest()[:10]
     _pdf_cache[key] = url
     if len(_pdf_cache) > 500:
-        _pdf_cache.pop(next(iter(_pdf_cache)))
+        first_key = next(iter(_pdf_cache), None)
+        if first_key:
+            _pdf_cache.pop(first_key, None)
     return key
 
 
@@ -77,7 +79,7 @@ class ScheduleBotHandlers:
         kb = [
             [
                 InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 На день"), callback_data="nav_schedule:0"),
-                InlineKeyboardButton(text="🗓 На тиждень", callback_data="nav_week:0")
+                InlineKeyboardButton(text=get_msg('keyboard.show_week', "🗓 На тиждень"), callback_data="nav_week:0")
             ],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
@@ -403,6 +405,12 @@ class ScheduleBotHandlers:
     async def process_nav_schedule(self, callback: CallbackQuery, state: FSMContext):
         """Обробник динамічного графіка розкладу з гортанням по днях."""
         await state.set_state(None)
+
+        user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            return
+
         offset = int(callback.data.split(":")[1])
 
         try:
@@ -429,6 +437,12 @@ class ScheduleBotHandlers:
     async def process_nav_week(self, callback: CallbackQuery, state: FSMContext):
         """Обробник розкладу на тиждень."""
         await state.set_state(None)
+
+        user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            return
+
         offset = int(callback.data.split(":")[1])
 
         try:
@@ -505,9 +519,19 @@ class ScheduleBotHandlers:
             await callback.answer()
             return
 
+        user = await db.get_user(callback.from_user.id)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            return
+
         # Гортання місяців
         if action in ["prev", "next"]:
-            year, month = int(data[2]), int(data[3])
+            try:
+                year, month = int(data[2]), int(data[3])
+            except (IndexError, ValueError):
+                await callback.answer("❌ Помилка навігації по календарю.", show_alert=True)
+                return
+
             month += -1 if action == "prev" else 1
             if month == 0: month, year = 12, year - 1
             if month == 13: month, year = 1, year + 1
@@ -520,8 +544,13 @@ class ScheduleBotHandlers:
 
         # Обробка вибору конкретної дати
         now = datetime.now()
-        target_date = now if action == "today" else (
-            now + timedelta(days=1) if action == "tomorrow" else datetime(int(data[2]), int(data[3]), int(data[4])))
+        try:
+            target_date = now if action == "today" else (
+                now + timedelta(days=1) if action == "tomorrow" else datetime(int(data[2]), int(data[3]), int(data[4])))
+        except (IndexError, ValueError):
+            await callback.answer("❌ Помилка вибору дати.", show_alert=True)
+            return
+
         offset = (target_date.date() - now.date()).days
         text, kb = await self._generate_schedule_ui(callback.from_user.id, offset)
         try:
@@ -636,11 +665,42 @@ class ScheduleBotHandlers:
 
     async def process_admin_test_evening(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
-        await callback.answer("Функцію симуляції запущено.", show_alert=False)
+        user = await db.get_user(SENIOR_ID)
+        if not user or not user['group_name']:
+            await callback.answer("Вкажіть групу для тесту!", show_alert=True)
+            return
+
+        await callback.answer("Формування тестового розкладу...", show_alert=False)
+        schedule = await scraper.parse_schedule_for_tomorrow(user['group_name'])
+
+        text = get_msg("schedule.evening_title", "🌙 <b>[ТЕСТ] Розклад на завтра:</b>") + "\n"
+        if schedule:
+            has_pdf = False
+            for item in schedule:
+                if item.get('is_pdf'):
+                    if not has_pdf:
+                        text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
+                        has_pdf = True
+                    text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
+                else:
+                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+            await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+        else:
+            await callback.message.answer("Пар на завтра немає (результат тесту).")
 
     async def process_admin_test_update(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
-        await callback.answer("Перевірка...", show_alert=False)
+        user = await db.get_user(SENIOR_ID)
+        if not user or not user['group_name']:
+            await callback.answer("Вкажіть групу для тесту!", show_alert=True)
+            return
+
+        await callback.answer("Перевірка змін розкладу...", show_alert=False)
+        has_changes = await scraper.check_schedule_changes(user['group_name'])
+        if has_changes:
+            await callback.message.answer("⚠️ Зміни розкладу знайдено! (Симуляція спрацювала)")
+        else:
+            await callback.message.answer("✅ Змін розкладу не виявлено.")
 
     async def process_admin_test_reminder(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
