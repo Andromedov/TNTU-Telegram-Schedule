@@ -42,16 +42,23 @@ async def is_active_study_period(target_date: datetime) -> bool:
 
 async def process_promotion(bot: Bot, dry_run: bool = False):
     """Ядро логіки переведення студентів. dry_run=True лише повертає звіт."""
-    users = await db.get_all_users()
     promoted_count = 0
     graduated_count = 0
     report = []
 
     group_counts = {}
-    for u in users:
-        g = u['group_name']
-        if g:
-            group_counts[g] = group_counts.get(g, 0) + 1
+
+    limit = 500
+    offset = 0
+    while True:
+        users_batch = await db.get_users_batch(limit, offset)
+        if not users_batch:
+            break
+        for u in users_batch:
+            g = u['group_name']
+            if g:
+                group_counts[g] = group_counts.get(g, 0) + 1
+        offset += limit
 
     unique_groups = set(group_counts.keys())
     group_mapping = {}
@@ -85,39 +92,46 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
             report.append(f"{group} -> {new_g} (користувачів: {count})")
         return "\n".join(report) if report else "Немає груп для переведення."
 
-    for user in users:
-        old_group = user['group_name']
-        if old_group in group_mapping:
-            new_group = group_mapping[old_group]
+    offset = 0
+    while True:
+        users_batch = await db.get_users_batch(limit, offset)
+        if not users_batch:
+            break
 
-            if new_group == "GRADUATED":
-                try:
-                    await bot.send_message(
-                        user['user_id'],
-                        f"🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\n"
-                        f"Група <b>{old_group}</b> більше не доступна на сайті розкладу.\n"
-                        f"<i>Якщо ви продовжуєте навчання в іншій групі (наприклад, магістратурі), змініть групу в налаштуваннях бота.</i>",
-                        parse_mode="HTML",
-                        reply_markup=_get_dismiss_keyboard()
-                    )
-                    # Очищаємо групу, щоб не спамити помилками надалі
-                    await db.add_or_update_user(user['user_id'], None)
-                    graduated_count += 1
-                except Exception:
-                    pass
-            else:
-                await db.add_or_update_user(user['user_id'], new_group)
-                try:
-                    await bot.send_message(
-                        user['user_id'],
-                        f"🎓 <b>Вітаємо з новим навчальним роком!</b>\n\n"
-                        f"Вашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>.",
-                        parse_mode="HTML",
-                        reply_markup=_get_dismiss_keyboard()
-                    )
-                    promoted_count += 1
-                except Exception:
-                    pass
+        for user in users_batch:
+            old_group = user['group_name']
+            if old_group in group_mapping:
+                new_group = group_mapping[old_group]
+
+                if new_group == "GRADUATED":
+                    try:
+                        await bot.send_message(
+                            user['user_id'],
+                            f"🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\n"
+                            f"Група <b>{old_group}</b> більше не доступна на сайті розкладу.\n"
+                            f"<i>Якщо ви продовжуєте навчання в іншій групі (наприклад, магістратурі), змініть групу в налаштуваннях бота.</i>",
+                            parse_mode="HTML",
+                            reply_markup=_get_dismiss_keyboard()
+                        )
+                        await db.add_or_update_user(user['user_id'], None)
+                        graduated_count += 1
+                    except Exception:
+                        pass
+                else:
+                    await db.add_or_update_user(user['user_id'], new_group)
+                    try:
+                        await bot.send_message(
+                            user['user_id'],
+                            f"🎓 <b>Вітаємо з новим навчальним роком!</b>\n\n"
+                            f"Вашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>.",
+                            parse_mode="HTML",
+                            reply_markup=_get_dismiss_keyboard()
+                        )
+                        promoted_count += 1
+                    except Exception:
+                        pass
+
+        offset += limit
 
     logging.info(f"Переведення завершено. Оновлено: {promoted_count}, Випущено: {graduated_count}.")
     return None

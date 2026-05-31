@@ -74,10 +74,11 @@ async def get_active_users():
         async with db.execute("SELECT * FROM users WHERE is_paused = 0") as cursor:
             return await cursor.fetchall()
 
-async def get_all_users():
+async def get_users_batch(limit: int, offset: int):
+    """Отримати користувачів порціями (батчами)."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users") as cursor:
+        async with db.execute("SELECT * FROM users LIMIT ? OFFSET ?", (limit, offset)) as cursor:
             return await cursor.fetchall()
 
 
