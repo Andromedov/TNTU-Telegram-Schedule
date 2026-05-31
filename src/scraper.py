@@ -7,6 +7,8 @@ import json
 import os
 import copy
 import asyncio
+import urllib.parse
+import re
 from typing import Optional, Tuple, List, Dict, Any
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
@@ -19,9 +21,8 @@ HASHES_FILE = "data/schedule_hashes.json"
 _html_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_MINUTES = 5
 
-
-# ==========================================
-#  ДОПОМІЖНІ ФУНКЦІЇ (Форматування тексту)
+_semester_dates_cache: Optional[Tuple[datetime, datetime]] = None
+_semester_dates_cache_time: Optional[datetime] = None
 # ==========================================
 
 def sanitize_group(group_name: str) -> str:
@@ -253,6 +254,74 @@ def _parse_core_data(html: Optional[str], group_name: str) -> Tuple[
 #          ПУБЛІЧНІ ФУНКЦІЇ ДЛЯ БОТА
 # ==========================================
 
+async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
+    """Отримує та парсить дати початку й кінця поточного семестру."""
+    global _semester_dates_cache, _semester_dates_cache_time
+    now = datetime.now()
+
+    if _semester_dates_cache and _semester_dates_cache_time and (now - _semester_dates_cache_time).total_seconds() < 604800:
+        return _semester_dates_cache
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+
+                    pattern = re.compile(
+                        r"(\d{1,2})\s+([а-яяіїє]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*(\d{1,2})\s+([а-яяіїє]+)\s+(\d{4})",
+                        re.IGNORECASE
+                    )
+
+                    months_map = {
+                        'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4, 'травня': 5, 'червня': 6,
+                        'липня': 7, 'серпня': 8, 'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
+                    }
+
+                    for tag in soup.find_all(['h2', 'h3', 'div', 'p']):
+                        if not isinstance(tag, Tag):
+                            continue
+
+                        text = _extract_text(tag)
+                        match = pattern.search(text)
+
+                        if match:
+                            try:
+                                start_day = int(match.group(1))
+                                start_month_str = match.group(2).lower()
+                                start_year_str = match.group(3)
+
+                                end_day = int(match.group(4))
+                                end_month_str = match.group(5).lower()
+                                end_year = int(match.group(6))
+
+                                start_month = months_map.get(start_month_str)
+                                end_month = months_map.get(end_month_str)
+
+                                if not start_month or not end_month:
+                                    continue
+
+                                start_year = int(start_year_str) if start_year_str else end_year
+
+                                if not start_year_str and start_month > end_month:
+                                    start_year = end_year - 1
+
+                                start_date = datetime(start_year, start_month, start_day)
+                                end_date = datetime(end_year, end_month, end_day, 23, 59, 59)
+
+                                _semester_dates_cache = (start_date, end_date)
+                                _semester_dates_cache_time = now
+                                return _semester_dates_cache
+
+                            except ValueError:
+                                continue
+    except Exception as e:
+        logging.error(f"Помилка парсингу дат семестру: {e}")
+
+    return None
+
+
 async def check_group_exists(group_name: str) -> bool:
     """Перевіряє, чи існує група на сайті ТНТУ."""
     html = await fetch_schedule_html(group_name)
@@ -300,8 +369,17 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     if not group_exists:
         return schedule
 
-    formatted_pdfs = [{'time': '📄 PDF', 'name': f"<a href='{p['url']}'>{p['name']}</a>", 'is_pdf': True} for p in
-                      pdf_links]
+    formatted_pdfs = []
+    for p in pdf_links:
+        encoded_url = urllib.parse.quote(p['url'])
+        viewer_url = f"https://docs.google.com/viewer?url={encoded_url}"
+        formatted_pdfs.append({
+            'time': '📄 PDF',
+            'name': p['name'],
+            'url': p['url'],
+            'viewer_url': viewer_url,
+            'is_pdf': True
+        })
 
     if not soup:
         return formatted_pdfs
