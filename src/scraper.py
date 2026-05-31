@@ -268,7 +268,6 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
                 if resp.status == 200:
                     html = await resp.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    text = soup.get_text(separator=' ')
 
                     pattern = re.compile(
                         r"(\d{1,2})\s+([а-яяіїє]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*(\d{1,2})\s+([а-яяіїє]+)\s+(\d{4})",
@@ -280,40 +279,48 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
                         'липня': 7, 'серпня': 8, 'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
                     }
 
-                    for match in pattern.finditer(text):
-                        try:
-                            start_day = int(match.group(1))
-                            start_month_str = match.group(2).lower()
-                            start_year_str = match.group(3)
-
-                            end_day = int(match.group(4))
-                            end_month_str = match.group(5).lower()
-                            end_year = int(match.group(6))
-
-                            start_month = months_map.get(start_month_str)
-                            end_month = months_map.get(end_month_str)
-
-                            if not start_month or not end_month:
-                                continue
-
-                            start_year = int(start_year_str) if start_year_str else end_year
-
-                            if not start_year_str and start_month > end_month:
-                                start_year = end_year - 1
-
-                            start_date = datetime(start_year, start_month, start_day)
-                            end_date = datetime(end_year, end_month, end_day, 23, 59, 59)
-
-                            _semester_dates_cache = (start_date, end_date)
-                            _semester_dates_cache_time = now
-                            return _semester_dates_cache
-
-                        except ValueError:
+                    for tag in soup.find_all(['h2', 'h3', 'div', 'p']):
+                        if not isinstance(tag, Tag):
                             continue
+
+                        text = _extract_text(tag)
+                        match = pattern.search(text)
+
+                        if match:
+                            try:
+                                start_day = int(match.group(1))
+                                start_month_str = match.group(2).lower()
+                                start_year_str = match.group(3)
+
+                                end_day = int(match.group(4))
+                                end_month_str = match.group(5).lower()
+                                end_year = int(match.group(6))
+
+                                start_month = months_map.get(start_month_str)
+                                end_month = months_map.get(end_month_str)
+
+                                if not start_month or not end_month:
+                                    continue
+
+                                start_year = int(start_year_str) if start_year_str else end_year
+
+                                if not start_year_str and start_month > end_month:
+                                    start_year = end_year - 1
+
+                                start_date = datetime(start_year, start_month, start_day)
+                                end_date = datetime(end_year, end_month, end_day, 23, 59, 59)
+
+                                _semester_dates_cache = (start_date, end_date)
+                                _semester_dates_cache_time = now
+                                return _semester_dates_cache
+
+                            except ValueError:
+                                continue
     except Exception as e:
         logging.error(f"Помилка парсингу дат семестру: {e}")
 
     return None
+
 
 async def check_group_exists(group_name: str) -> bool:
     """Перевіряє, чи існує група на сайті ТНТУ."""
