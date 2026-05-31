@@ -1,5 +1,3 @@
-from typing import LiteralString
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -130,7 +128,7 @@ async def promote_groups(bot: Bot):
     await process_promotion(bot, dry_run=False)
 
 
-async def promote_groups_dry_run(bot: Bot) -> LiteralString | str | None:
+async def promote_groups_dry_run(bot: Bot) -> str | None:
     return await process_promotion(bot, dry_run=True)
 
 
@@ -193,7 +191,16 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
         return
 
-    time_str = f"{offset // 60} год" + (f" {offset % 60} хв" if offset % 60 else "") if offset >= 60 else f"{offset} хв"
+    if offset >= 60:
+        hours = offset // 60
+        minutes = offset % 60
+        if minutes:
+            time_str = f"{hours} год {minutes} хв"
+        else:
+            time_str = f"{hours} год"
+    else:
+        time_str = f"{offset} хв"
+
     text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
                    time_str=time_str, subject_name=subject_name)
 
