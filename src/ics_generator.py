@@ -53,5 +53,5 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 logging.error(f"Помилка парсингу часу {time_str} для ICS: {e}")
                 continue
 
-    # Повертаємо текстовий вміст ICS
-    return cal.serialize()
+    serialized = cal.serialize()
+    return serialized.replace('\r\n', '\n').replace('\n', '\r\n') + '\r\n'
