@@ -483,8 +483,13 @@ class ScheduleBotHandlers:
 
     async def process_export_ics(self, callback: CallbackQuery):
         """Обробник експорту розкладу у файл .ics."""
+        global _ics_cooldown
         user_id = callback.from_user.id
         now = datetime.now()
+
+        keys_to_delete = [k for k, v in _ics_cooldown.items() if (now - v).total_seconds() > 300]
+        for k in keys_to_delete:
+            _ics_cooldown.pop(k, None)
 
         last_time = _ics_cooldown.get(user_id)
         if last_time and (now - last_time).total_seconds() < 45:
@@ -739,6 +744,11 @@ class ScheduleBotHandlers:
     async def process_admin_test_reminder(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
         user = await db.get_user(SENIOR_ID)
+
+        if not user or not user['group_name']:
+            await callback.answer("Вкажіть групу для тесту!", show_alert=True)
+            return
+
         offset = user.get('reminder_offset', 10)
         time_str = f"{offset} хв"
         text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
@@ -797,8 +807,7 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")
         self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
         self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")
-
-        # Текстові повідомлення (fallback)
         self.router.callback_query.register(self.process_admin_test_reminder, F.data == "admin_test_reminder")
         self.router.callback_query.register(self.process_admin_test_promote, F.data == "admin_test_promote")
+
         self.router.message.register(self.process_any_text, F.text)
