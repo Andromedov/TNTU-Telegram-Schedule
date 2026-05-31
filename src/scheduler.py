@@ -1,3 +1,4 @@
+import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -48,6 +49,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
 
     group_counts = {}
 
+    # Крок 1: Збираємо всі групи та кількість користувачів батчами
     limit = 500
     offset = 0
     while True:
@@ -62,6 +64,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
 
     unique_groups = set(group_counts.keys())
     group_mapping = {}
+    candidates = {}
 
     pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)$")
 
@@ -75,10 +78,29 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
             new_year = year + 1
             if new_year > 6:
                 group_mapping[group] = "GRADUATED"
-                continue
+            else:
+                candidates[group] = f"{prefix}{new_year}{suffix}"
 
-            new_group = f"{prefix}{new_year}{suffix}"
-            group_mapping[group] = new_group
+    async def find_valid_group(g_name: str) -> str | None:
+        """Перевіряє, чи існує група, якщо ні — пробує підігнати регістр (СТС-31 -> СТс-31)."""
+        if await scraper.check_group_exists(g_name):
+            return g_name
+
+        if "-" in g_name:
+            parts = g_name.split("-")
+            if len(parts[0]) > 1 and parts[0][-1].isalpha():
+                alt_prefix = parts[0][:-1] + parts[0][-1].lower()
+                alt_g = f"{alt_prefix}-{'-'.join(parts[1:])}"
+                if await scraper.check_group_exists(alt_g):
+                    return alt_g
+        return None
+
+    if candidates:
+        exist_results = await asyncio.gather(
+            *[find_valid_group(new_g) for new_g in candidates.values()]
+        )
+        for old_g, valid_new_g in zip(candidates.keys(), exist_results):
+            group_mapping[old_g] = valid_new_g if valid_new_g else "GRADUATED"
 
     if dry_run:
         for group, new_g in group_mapping.items():
