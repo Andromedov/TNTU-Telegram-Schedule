@@ -22,7 +22,8 @@ async def main():
 
     dp.include_router(main_router)
 
-    await bot.set_my_commands(handlers.get_bot_commands())
+    await bot.set_my_commands(handlers.get_bot_commands("uk"))
+    await bot.set_my_commands(handlers.get_bot_commands("en"), language_code="en")
 
     scheduler = setup_scheduler(bot)
     scheduler.start()

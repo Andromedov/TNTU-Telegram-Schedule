@@ -13,7 +13,7 @@ import hashlib
 import database as db
 import scraper
 from scheduler import promote_groups_dry_run
-from messages import get_msg
+from messages import get_msg, normalize_language
 from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
@@ -45,16 +45,35 @@ class ScheduleBotHandlers:
         self.router = router
         self._register_handlers()
 
+    @staticmethod
+    def _user_language(user_data, telegram_language: str | None = None) -> str:
+        if user_data:
+            language = dict(user_data).get("language")
+            if language:
+                return normalize_language(language)
+        return normalize_language(telegram_language)
+
+    async def _get_user_language(self, user_id: int, telegram_language: str | None = None) -> str:
+        return self._user_language(await db.get_user(user_id), telegram_language)
+
+    @staticmethod
+    def get_language_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🇺🇦 Українська", callback_data="set_language:uk")],
+            [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_language:en")],
+        ])
+
     async def _cleanup_old_ui(self, message: Message, state: FSMContext):
         """Редагує попереднє повідомлення меню, закриваючи його, щоб запобігти спаму."""
         data = await state.get_data()
         old_msg_id = data.get("last_ui_msg_id")
         if old_msg_id:
+            language = await self._get_user_language(message.from_user.id, message.from_user.language_code)
             try:
                 await message.bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=old_msg_id,
-                    text="<i>Дякую за використання бота! Меню закрито.</i> 🤖",
+                    text=get_msg("start.menu_closed", language=language),
                     parse_mode="HTML",
                     reply_markup=None
                 )
@@ -62,11 +81,11 @@ class ScheduleBotHandlers:
                 pass
 
     @staticmethod
-    def get_bot_commands() -> list[BotCommand]:
+    def get_bot_commands(language: str = "uk") -> list[BotCommand]:
         """Повертає список команд для автоматичного встановлення меню бота в Telegram."""
         return [
-            BotCommand(command="start", description=get_msg('commands.start', "Головне меню бота")),
-            BotCommand(command="settings", description=get_msg('commands.settings', "Налаштування сповіщень"))
+            BotCommand(command="start", description=get_msg('commands.start', language=language)),
+            BotCommand(command="settings", description=get_msg('commands.settings', language=language))
         ]
 
     # ==========================================
@@ -74,15 +93,15 @@ class ScheduleBotHandlers:
     # ==========================================
 
     @staticmethod
-    def get_main_keyboard() -> InlineKeyboardMarkup:
+    def get_main_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
         """Головне меню бота."""
         kb = [
             [
-                InlineKeyboardButton(text=get_msg('keyboard.show_schedule', "📅 На день"), callback_data="nav_schedule:0"),
-                InlineKeyboardButton(text=get_msg('keyboard.show_week', "🗓 На тиждень"), callback_data="nav_week:0")
+                InlineKeyboardButton(text=get_msg('keyboard.show_schedule', language=language), callback_data="nav_schedule:0"),
+                InlineKeyboardButton(text=get_msg('keyboard.show_week', language=language), callback_data="nav_week:0")
             ],
-            [InlineKeyboardButton(text=get_msg('keyboard.settings', "⚙️ Налаштування"), callback_data="show_settings")],
-            [InlineKeyboardButton(text=get_msg('keyboard.change_group', "🔄 Змінити групу"),
+            [InlineKeyboardButton(text=get_msg('keyboard.settings', language=language), callback_data="show_settings")],
+            [InlineKeyboardButton(text=get_msg('keyboard.change_group', language=language),
                                   callback_data="change_group")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -91,83 +110,85 @@ class ScheduleBotHandlers:
     def get_settings_keyboard(user_data) -> InlineKeyboardMarkup:
         """Меню налаштувань."""
         user_dict = dict(user_data)
+        language = ScheduleBotHandlers._user_language(user_dict)
         notify_enabled = user_dict.get('notify_10_min', 1)
         offset = user_dict.get('reminder_offset', 10)
 
         if not notify_enabled:
-            remind_text = "❌ Нагадування (Вимкнено)"
+            remind_text = get_msg("settings.reminder_off", language=language)
         elif offset == 60:
-            remind_text = "✅ Нагадування (1 год)"
+            remind_text = get_msg("settings.reminder_hour", language=language)
         elif offset == 90:
-            remind_text = "✅ Нагадування (1.5 год)"
+            remind_text = get_msg("settings.reminder_hour_half", language=language)
         else:
-            remind_text = f"✅ Нагадування ({offset} хв)"
+            remind_text = get_msg("settings.reminder_minutes", language=language, minutes=offset)
 
         kb = [
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
             [InlineKeyboardButton(
-                text=f"{'✅' if user_dict.get('notify_evening', 1) else '❌'} {get_msg('keyboard.evening', 'Розклад ввечері')}",
+                text=f"{'✅' if user_dict.get('notify_evening', 1) else '❌'} {get_msg('keyboard.evening', language=language)}",
                 callback_data="toggle_evening"
             )],
             [InlineKeyboardButton(
-                text=f"{'⏸' if user_dict.get('is_paused', 0) else '▶️'} {get_msg('keyboard.pause', 'Пауза сповіщень')}",
+                text=f"{'⏸' if user_dict.get('is_paused', 0) else '▶️'} {get_msg('keyboard.pause', language=language)}",
                 callback_data="toggle_pause"
             )],
             [InlineKeyboardButton(
-                text=f"{'✅' if user_dict.get('notify_schedule_update', 1) else '❌'} {get_msg('keyboard.schedule_update', 'Сповіщення про оновлення розкладу')}",
+                text=f"{'✅' if user_dict.get('notify_schedule_update', 1) else '❌'} {get_msg('keyboard.schedule_update', language=language)}",
                 callback_data="toggle_notify_schedule_update"
             )],
-            [InlineKeyboardButton(text=get_msg('keyboard.back', "🔙 Назад до меню"), callback_data="back_to_main")]
+            [InlineKeyboardButton(text=get_msg('keyboard.language', language=language), callback_data="settings_language")],
+            [InlineKeyboardButton(text=get_msg('keyboard.back', language=language), callback_data="back_to_main")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_reminder_settings_keyboard() -> InlineKeyboardMarkup:
+    def get_reminder_settings_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
         """Підменю вибору часу нагадування."""
         kb = [
-            [InlineKeyboardButton(text="Вимкнути повністю ❌", callback_data="set_remind:0")],
-            [InlineKeyboardButton(text="10 хв", callback_data="set_remind:10"),
-             InlineKeyboardButton(text="15 хв", callback_data="set_remind:15"),
-             InlineKeyboardButton(text="30 хв", callback_data="set_remind:30")],
-            [InlineKeyboardButton(text="1 година", callback_data="set_remind:60"),
-             InlineKeyboardButton(text="1.5 години", callback_data="set_remind:90")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="show_settings")]
+            [InlineKeyboardButton(text=get_msg("settings.disable", language=language), callback_data="set_remind:0")],
+            [InlineKeyboardButton(text=get_msg("settings.minutes", language=language, minutes=10), callback_data="set_remind:10"),
+             InlineKeyboardButton(text=get_msg("settings.minutes", language=language, minutes=15), callback_data="set_remind:15"),
+             InlineKeyboardButton(text=get_msg("settings.minutes", language=language, minutes=30), callback_data="set_remind:30")],
+            [InlineKeyboardButton(text=get_msg("settings.one_hour", language=language), callback_data="set_remind:60"),
+             InlineKeyboardButton(text=get_msg("settings.hour_half", language=language), callback_data="set_remind:90")],
+            [InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_schedule_nav_keyboard(offset: int, extra_buttons: list = None) -> InlineKeyboardMarkup:
+    def get_schedule_nav_keyboard(offset: int, extra_buttons: list = None, language: str = "uk") -> InlineKeyboardMarkup:
         """Клавіатура для навігації по днях."""
         kb = [
             [
                 InlineKeyboardButton(text="⬅️", callback_data=f"nav_schedule:{offset - 1}"),
-                InlineKeyboardButton(text="🔄 Оновити", callback_data=f"nav_schedule:{offset}"),
+                InlineKeyboardButton(text=get_msg("keyboard.refresh", language=language), callback_data=f"nav_schedule:{offset}"),
                 InlineKeyboardButton(text="➡️", callback_data=f"nav_schedule:{offset + 1}")
             ],
             [
-                InlineKeyboardButton(text=get_msg('keyboard.custom_date', "📅 Обрати дату"), callback_data="ask_custom_date")
+                InlineKeyboardButton(text=get_msg('keyboard.custom_date', language=language), callback_data="ask_custom_date")
             ]
         ]
 
         if extra_buttons:
             kb.extend(extra_buttons)
 
-        kb.append([InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")])
+        kb.append([InlineKeyboardButton(text=get_msg("keyboard.menu", language=language), callback_data="back_to_main")])
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
-    def get_week_nav_keyboard(offset: int, extra_buttons: list = None) -> InlineKeyboardMarkup:
+    def get_week_nav_keyboard(offset: int, extra_buttons: list = None, language: str = "uk") -> InlineKeyboardMarkup:
         kb = [
             [
-                InlineKeyboardButton(text="⬅️ Тиждень", callback_data=f"nav_week:{offset - 1}"),
+                InlineKeyboardButton(text=get_msg("keyboard.previous_week", language=language), callback_data=f"nav_week:{offset - 1}"),
                 InlineKeyboardButton(text="🔄", callback_data=f"nav_week:{offset}"),
-                InlineKeyboardButton(text="Тиждень ➡️", callback_data=f"nav_week:{offset + 1}")
+                InlineKeyboardButton(text=get_msg("keyboard.next_week", language=language), callback_data=f"nav_week:{offset + 1}")
             ],
-            [InlineKeyboardButton(text="📍 Поточний тиждень", callback_data="nav_week:0")],
-            [InlineKeyboardButton(text="📲 Експорт в календар (.ics)", callback_data=f"export_ics:{offset}")]
+            [InlineKeyboardButton(text=get_msg("keyboard.current_week", language=language), callback_data="nav_week:0")],
+            [InlineKeyboardButton(text=get_msg("keyboard.export_ics", language=language), callback_data=f"export_ics:{offset}")]
         ]
         if extra_buttons: kb.extend(extra_buttons)
-        kb.append([InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_main")])
+        kb.append([InlineKeyboardButton(text=get_msg("keyboard.menu", language=language), callback_data="back_to_main")])
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     @staticmethod
@@ -187,7 +208,7 @@ class ScheduleBotHandlers:
     #            ГЕНЕРАЦІЯ РОЗКЛАДУ
     # ==========================================
 
-    async def _get_next_class_text(self, group_name: str) -> str:
+    async def _get_next_class_text(self, group_name: str, language: str = "uk") -> str:
         """Повертає рядок з наступною парою для головного меню."""
         schedule = await scraper.parse_schedule_for_today(group_name)
         now = datetime.now()
@@ -198,38 +219,40 @@ class ScheduleBotHandlers:
                 h, m = map(int, start_time_str.split(':'))
                 class_time = now.replace(hour=h, minute=m, second=0)
                 if class_time > now:
-                    return f"\n\nНаступна пара: ⏰ <b>{start_time_str}</b> - {item['name']}"
+                    return get_msg("start.next_class", language=language, time=start_time_str, subject=item['name'])
             except Exception:
                 pass
-        return "\n\nНаступна пара: Сьогодні більше пар немає 🎉"
+        return get_msg("start.no_more_classes", language=language)
 
     async def _generate_schedule_ui(self, user_id: int, offset: int) -> tuple[str, InlineKeyboardMarkup]:
         """Генерує текст розкладу та клавіатуру для заданого offset (зміщення в днях)."""
         user = await db.get_user(user_id)
+        language = self._user_language(user)
         if not user or not user['group_name']:
-            return get_msg("group.need_group", "Спочатку вкажіть групу!"), self.get_main_keyboard()
+            return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
         target_date = datetime.now() + timedelta(days=offset)
         schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
 
-        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        weekdays = get_msg("schedule.weekdays", language=language).split("|")
         day_name = weekdays[target_date.weekday()]
         date_str = target_date.strftime("%d.%m.%Y")
 
         if offset == 0:
-            relative_day = " (Сьогодні)"
+            relative_day = get_msg("schedule.today_relative", language=language)
         elif offset == 1:
-            relative_day = " (Завтра)"
+            relative_day = get_msg("schedule.tomorrow_relative", language=language)
         elif offset == -1:
-            relative_day = " (Вчора)"
+            relative_day = get_msg("schedule.yesterday_relative", language=language)
         else:
             relative_day = ""
 
-        text = f"📅 <b>Розклад на {day_name}{relative_day}</b>\n🗓 Дата: {date_str}\n🎓 Група: <b>{user['group_name']}</b>\n\n"
+        text = get_msg("schedule.day_header", language=language, day=day_name, relative=relative_day,
+                       date=date_str, group=user['group_name'])
         pdf_buttons = []
 
         if not schedule:
-            text += get_msg("schedule.no_classes_today", "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).")
+            text += get_msg("schedule.no_classes_today", language=language)
         else:
             has_pdf = False
             for item in schedule:
@@ -240,27 +263,29 @@ class ScheduleBotHandlers:
                     text += f"📄 <b>{item['name']}</b>\n"
                     pdf_key = _get_pdf_key(item['url'])
                     pdf_buttons.append([
-                        InlineKeyboardButton(text="👀 Відкрити (Web)", url=item['viewer_url']),
-                        InlineKeyboardButton(text="📩 Отримати файлом", callback_data=f"send_pdf:{pdf_key}")
+                        InlineKeyboardButton(text=get_msg("keyboard.open_web", language=language), url=item['viewer_url']),
+                        InlineKeyboardButton(text=get_msg("keyboard.get_file", language=language), callback_data=f"send_pdf:{pdf_key}")
                     ])
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
 
-        return text, self.get_schedule_nav_keyboard(offset, pdf_buttons)
+        return text, self.get_schedule_nav_keyboard(offset, pdf_buttons, language)
 
     async def _generate_week_schedule_ui(self, user_id: int, offset_weeks: int) -> tuple[str, InlineKeyboardMarkup]:
         """Генерує розклад на весь тиждень (Пн-Нд)."""
         user = await db.get_user(user_id)
+        language = self._user_language(user)
         if not user or not user['group_name']:
-            return get_msg("group.need_group", "Спочатку вкажіть групу!"), self.get_main_keyboard()
+            return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
         now = datetime.now()
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         sunday = monday + timedelta(days=6)
 
-        text = f"🗓 <b>Розклад на тиждень ({monday.strftime('%d.%m')} - {sunday.strftime('%d.%m')})</b>\n🎓 Група: <b>{user['group_name']}</b>\n\n"
+        text = get_msg("schedule.week_header", language=language, start=monday.strftime('%d.%m'),
+                       end=sunday.strftime('%d.%m'), group=user['group_name'])
 
-        weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        weekdays = get_msg("schedule.weekdays", language=language).split("|")
 
         all_pdfs = {}
         has_any_classes = False
@@ -285,7 +310,7 @@ class ScheduleBotHandlers:
                 text += "\n"
 
         if not has_any_classes:
-            text += "🏖 <b>На цей тиждень пар немає.</b>\n\n"
+            text += get_msg("schedule.no_classes_week", language=language) + "\n\n"
 
         pdf_buttons = []
         if all_pdfs:
@@ -294,16 +319,16 @@ class ScheduleBotHandlers:
                 text += f"📄 <b>{pdf['name']}</b>\n"
                 pdf_key = _get_pdf_key(pdf['url'])
                 pdf_buttons.append([
-                    InlineKeyboardButton(text="👀 Відкрити (Web)", url=pdf['viewer_url']),
-                    InlineKeyboardButton(text="📩 Отримати", callback_data=f"send_pdf:{pdf_key}")
+                    InlineKeyboardButton(text=get_msg("keyboard.open_web", language=language), url=pdf['viewer_url']),
+                    InlineKeyboardButton(text=get_msg("keyboard.get_file", language=language), callback_data=f"send_pdf:{pdf_key}")
                 ])
 
         if len(text) > 3900:
             cut_idx = text.rfind('\n', 0, 3900)
             if cut_idx != -1:
-                text = text[:cut_idx] + "\n\n<i>... (частину розкладу приховано через ліміт Telegram)</i>"
+                text = text[:cut_idx] + "\n\n" + get_msg("schedule.truncated", language=language)
 
-        return text, self.get_week_nav_keyboard(offset_weeks, pdf_buttons)
+        return text, self.get_week_nav_keyboard(offset_weeks, pdf_buttons, language)
 
     # ==========================================
     #            ОБРОБНИКИ
@@ -316,22 +341,23 @@ class ScheduleBotHandlers:
             pass
 
         user = await db.get_user(message.from_user.id)
+        language = self._user_language(user, message.from_user.language_code)
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
 
         if not user or not user['group_name']:
-            await db.add_or_update_user(message.from_user.id)
-            msg = await message.answer(get_msg("start.greeting_new", "👋 Привіт! Я бот..."))
+            await db.add_or_update_user(message.from_user.id, language=language)
+            msg = await message.answer(get_msg("start.greeting_new", language=language))
             await state.set_state(UserState.waiting_for_group)
             await state.update_data(prompt_msg_id=msg.message_id, last_ui_msg_id=msg.message_id)
         else:
-            next_class = await self._get_next_class_text(user['group_name'])
+            next_class = await self._get_next_class_text(user['group_name'], language)
             msg = await message.answer(
-                get_msg("start.greeting_existing", "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>{next_class}",
+                get_msg("start.greeting_existing", language=language,
                         name=message.from_user.first_name, group=user['group_name'],
                         next_class=next_class),
                 parse_mode="HTML",
-                reply_markup=self.get_main_keyboard()
+                reply_markup=self.get_main_keyboard(language)
             )
             await state.update_data(last_ui_msg_id=msg.message_id)
 
@@ -342,14 +368,15 @@ class ScheduleBotHandlers:
             pass
 
         user = await db.get_user(message.from_user.id)
+        language = self._user_language(user, message.from_user.language_code)
         if not user or not user['group_name']:
-            await message.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"))
+            await message.answer(get_msg("group.need_group", language=language))
             return
 
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
 
-        msg = await message.answer(get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
+        msg = await message.answer(get_msg("settings.title", language=language),
                                    parse_mode="HTML",
                                    reply_markup=self.get_settings_keyboard(user))
         await state.update_data(last_ui_msg_id=msg.message_id)
@@ -374,6 +401,8 @@ class ScheduleBotHandlers:
 
     async def process_group_name_fsm(self, message: Message, state: FSMContext):
         group_name = message.text.upper().strip()
+        user = await db.get_user(message.from_user.id)
+        language = self._user_language(user, message.from_user.language_code)
 
         try:
             await message.delete()
@@ -385,25 +414,25 @@ class ScheduleBotHandlers:
 
         clean_name = group_name.replace("-", "").replace(" ", "")
         if len(clean_name) < 3 or not any(c.isalpha() for c in clean_name) or not any(c.isdigit() for c in clean_name):
-            error_text = "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
+            error_text = get_msg("group.invalid", language=language)
             new_msg = await message.answer(error_text, parse_mode="HTML")
             await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
             return
 
-        checking_text = get_msg("group.checking", "⏳ Перевіряю чи існує група <b>{group}</b>...", group=group_name)
+        checking_text = get_msg("group.checking", language=language, group=group_name)
         processing_msg = await message.answer(checking_text, parse_mode="HTML")
 
         is_valid = await scraper.check_group_exists(group_name)
 
         if is_valid:
-            await db.add_or_update_user(message.from_user.id, group_name)
-            await processing_msg.edit_text(get_msg("group.saved", "✅ Групу успішно збережено!", group_name=group_name),
+            await db.add_or_update_user(message.from_user.id, group_name, language)
+            await processing_msg.edit_text(get_msg("group.saved", language=language, group_name=group_name),
                                            parse_mode="HTML",
-                                           reply_markup=self.get_main_keyboard())
+                                           reply_markup=self.get_main_keyboard(language))
             await state.set_state(None)
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
         else:
-            await processing_msg.edit_text(get_msg("group.not_found", "❌ Групу не знайдено...", group=group_name),
+            await processing_msg.edit_text(get_msg("group.not_found", language=language, group=group_name),
                                            parse_mode="HTML")
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
@@ -423,14 +452,15 @@ class ScheduleBotHandlers:
         await state.set_state(None)
 
         user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
         if not user or not user['group_name']:
-            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
         offset = int(callback.data.split(":")[1])
 
         try:
-            await callback.message.edit_text(get_msg("schedule.loading", "⏳ Завантажую розклад..."))
+            await callback.message.edit_text(get_msg("schedule.loading", language=language))
         except TelegramBadRequest:
             pass
 
@@ -443,10 +473,10 @@ class ScheduleBotHandlers:
                 disable_web_page_preview=True,
                 reply_markup=kb
             )
-            await callback.answer("🔄 Оновлено!")
+            await callback.answer(get_msg("schedule.updated", language=language))
         except TelegramBadRequest as e:
             if "not modified" in str(e).lower():
-                await callback.answer("✅ Розклад актуальний.")
+                await callback.answer(get_msg("schedule.current", language=language))
             else:
                 await callback.answer()
 
@@ -455,14 +485,15 @@ class ScheduleBotHandlers:
         await state.set_state(None)
 
         user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
         if not user or not user['group_name']:
-            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
         offset = int(callback.data.split(":")[1])
 
         try:
-            await callback.message.edit_text(get_msg("schedule.loading", "⏳ Формую розклад..."))
+            await callback.message.edit_text(get_msg("schedule.forming", language=language))
         except TelegramBadRequest:
             pass
 
@@ -475,10 +506,10 @@ class ScheduleBotHandlers:
                 disable_web_page_preview=True,
                 reply_markup=kb
             )
-            await callback.answer("🔄 Оновлено!")
+            await callback.answer(get_msg("schedule.updated", language=language))
         except TelegramBadRequest as e:
             if "not modified" in str(e).lower():
-                await callback.answer("✅ Актуально.")
+                await callback.answer(get_msg("schedule.current", language=language))
             else:
                 await callback.answer()
 
@@ -487,6 +518,7 @@ class ScheduleBotHandlers:
         global _ics_cooldown
         user_id = callback.from_user.id
         now = datetime.now()
+        language = await self._get_user_language(user_id, callback.from_user.language_code)
 
         keys_to_delete = [k for k, v in _ics_cooldown.items() if (now - v).total_seconds() > 300]
         for k in keys_to_delete:
@@ -494,11 +526,11 @@ class ScheduleBotHandlers:
 
         last_time = _ics_cooldown.get(user_id)
         if last_time and (now - last_time).total_seconds() < 45:
-            await callback.answer("⏳ Зачекайте 45 сек перед наступним експортом", show_alert=True)
+            await callback.answer(get_msg("export.cooldown", language=language), show_alert=True)
             return
         _ics_cooldown[user_id] = now
 
-        await callback.answer("⏳ Генерую файл...", show_alert=False)
+        await callback.answer(get_msg("export.generating", language=language), show_alert=False)
         user = await db.get_user(user_id)
         if not user or not user['group_name']: return
 
@@ -512,31 +544,26 @@ class ScheduleBotHandlers:
         ics_content = generate_week_ics(user['group_name'], schedule_data)
 
         if not ics_content.strip() or "BEGIN:VEVENT" not in ics_content:
-            await callback.message.answer("❌ На цей тиждень немає пар для експорту.")
+            await callback.message.answer(get_msg("export.empty", language=language))
             return
 
         file = BufferedInputFile(ics_content.encode('utf-8'),
                                  filename=f"Schedule_{user['group_name']}_{monday.strftime('%d_%m')}.ics")
 
-        caption_text = (
-            "📲 <b>Ваш файл розкладу готовий!</b>\n\n"
-            "💡 <i>Як додати в календар:</i>\n"
-            "1. Завантажте цей файл.\n"
-            "2. Відкрийте його на своєму пристрої.\n"
-            "3. Натисніть «Додати всі події» (або аналогічну кнопку)."
-        )
+        caption_text = get_msg("export.caption", language=language)
 
         try:
             await callback.message.answer_document(document=file, caption=caption_text, parse_mode="HTML")
         except Exception as e:
             logging.error(f"Помилка відправки ICS файлу: {e}")
-            await callback.message.answer("❌ Сталася помилка при створенні файлу.")
+            await callback.message.answer(get_msg("export.error", language=language))
 
     async def process_ask_custom_date(self, callback: CallbackQuery, state: FSMContext):
         """Відображає інлайн-календар для вибору дати."""
         now = datetime.now()
-        await callback.message.edit_text(get_msg("schedule.ask_date", "📅 Оберіть дату:"), parse_mode="HTML",
-                                         reply_markup=get_calendar_keyboard(now.year, now.month))
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(get_msg("schedule.ask_date", language=language), parse_mode="HTML",
+                                         reply_markup=get_calendar_keyboard(now.year, now.month, language))
         await callback.answer()
 
     async def process_calendar_selection(self, callback: CallbackQuery):
@@ -549,8 +576,9 @@ class ScheduleBotHandlers:
             return
 
         user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
         if not user or not user['group_name']:
-            await callback.answer(get_msg("group.need_group", "Спочатку вкажіть групу!"), show_alert=True)
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
         # Гортання місяців
@@ -558,14 +586,14 @@ class ScheduleBotHandlers:
             try:
                 year, month = int(data[2]), int(data[3])
             except (IndexError, ValueError):
-                await callback.answer("❌ Помилка навігації по календарю.", show_alert=True)
+                await callback.answer(get_msg("calendar.navigation_error", language=language), show_alert=True)
                 return
 
             month += -1 if action == "prev" else 1
             if month == 0: month, year = 12, year - 1
             if month == 13: month, year = 1, year + 1
             try:
-                await callback.message.edit_reply_markup(reply_markup=get_calendar_keyboard(year, month))
+                await callback.message.edit_reply_markup(reply_markup=get_calendar_keyboard(year, month, language))
             except TelegramBadRequest:
                 pass
             await callback.answer()
@@ -577,7 +605,7 @@ class ScheduleBotHandlers:
             target_date = now if action == "today" else (
                 now + timedelta(days=1) if action == "tomorrow" else datetime(int(data[2]), int(data[3]), int(data[4])))
         except (IndexError, ValueError):
-            await callback.answer("❌ Помилка вибору дати.", show_alert=True)
+            await callback.answer(get_msg("calendar.selection_error", language=language), show_alert=True)
             return
 
         offset = (target_date.date() - now.date()).days
@@ -591,17 +619,19 @@ class ScheduleBotHandlers:
     async def process_show_settings(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
-        await callback.message.edit_text(get_msg("settings.title", "⚙️ Налаштування:"),
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_text(get_msg("settings.title", language=language),
                                          parse_mode="HTML",
                                          reply_markup=self.get_settings_keyboard(user))
         await callback.answer()
 
     async def process_settings_reminder(self, callback: CallbackQuery):
         """Відкриває підменю вибору часу нагадування."""
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         await callback.message.edit_text(
-            "⏳ <b>Оберіть час нагадування перед початком пари:</b>",
+            get_msg("settings.choose_reminder", language=language),
             parse_mode="HTML",
-            reply_markup=self.get_reminder_settings_keyboard()
+            reply_markup=self.get_reminder_settings_keyboard(language)
         )
         await callback.answer()
 
@@ -617,15 +647,37 @@ class ScheduleBotHandlers:
             await db.update_setting(user_id, 'reminder_offset', offset)
 
         updated_user = await db.get_user(user_id)
+        language = self._user_language(updated_user, callback.from_user.language_code)
         await callback.message.edit_text(
-            get_msg("settings.title", "⚙️ <b>Налаштування сповіщень:</b>"),
+            get_msg("settings.title", language=language),
             parse_mode="HTML",
             reply_markup=self.get_settings_keyboard(updated_user)
         )
-        await callback.answer("Налаштування збережено!")
+        await callback.answer(get_msg("settings.saved", language=language))
+
+    async def process_settings_language(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_language", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_language_keyboard(),
+        )
+        await callback.answer()
+
+    async def process_set_language(self, callback: CallbackQuery):
+        language = normalize_language(callback.data.split(":", 1)[1])
+        await db.update_setting(callback.from_user.id, "language", language)
+        user = await db.get_user(callback.from_user.id)
+        await callback.message.edit_text(
+            get_msg("settings.title", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_settings_keyboard(user),
+        )
+        await callback.answer(get_msg("settings.language_changed", language=language))
 
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
-        await callback.message.edit_text(get_msg("group.ask_new", "Введіть нову групу:"))
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(get_msg("group.ask_new", language=language))
         await state.set_state(UserState.waiting_for_group)
         await state.update_data(prompt_msg_id=callback.message.message_id, last_ui_msg_id=callback.message.message_id)
         await callback.answer()
@@ -633,18 +685,19 @@ class ScheduleBotHandlers:
     async def process_back_to_main(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
         if not user or not user['group_name']:
-            await callback.message.edit_text(get_msg("group.need_group", "Спочатку вкажіть групу!"),
+            await callback.message.edit_text(get_msg("group.need_group", language=language),
                 parse_mode="HTML",
-                reply_markup=self.get_main_keyboard()
+                reply_markup=self.get_main_keyboard(language)
             )
             return
-        next_class = await self._get_next_class_text(user['group_name'])
+        next_class = await self._get_next_class_text(user['group_name'], language)
         await callback.message.edit_text(
-            get_msg("start.main_menu_title", "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}",
+            get_msg("start.main_menu_title", language=language,
                     group=user['group_name'], next_class=next_class),
             parse_mode="HTML",
-            reply_markup=self.get_main_keyboard())
+            reply_markup=self.get_main_keyboard(language))
         await callback.answer()
 
     async def process_toggles(self, callback: CallbackQuery):
@@ -658,25 +711,27 @@ class ScheduleBotHandlers:
             await db.update_setting(user_id, 'notify_schedule_update', 0 if user['notify_schedule_update'] else 1)
 
         updated_user = await db.get_user(user_id)
+        language = self._user_language(updated_user, callback.from_user.language_code)
         await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(updated_user))
-        await callback.answer(get_msg("settings.updated", "Налаштування оновлено!"))
+        await callback.answer(get_msg("settings.updated", language=language))
 
     async def process_send_pdf(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         key = callback.data.split(":", 1)[1]
         url = _pdf_cache.get(key)
         if not url:
-            await callback.answer("❌ Посилання застаріло. Оновіть розклад.", show_alert=True)
+            await callback.answer(get_msg("pdf.expired", language=language), show_alert=True)
             return
-        await callback.answer("⏳ Завантажую файл...", show_alert=False)
+        await callback.answer(get_msg("pdf.loading", language=language), show_alert=False)
         try:
             await callback.message.answer_document(
                 document=url,
-                caption="📄 <b>Ваш розклад</b>",
+                caption=get_msg("pdf.caption", language=language),
                 parse_mode="HTML"
             )
         except Exception as e:
             logging.error(f"Помилка відправки PDF документу: {e}")
-            await callback.message.answer("❌ Не вдалося завантажити файл. Натисніть '👀 Відкрити (Web)'.")
+            await callback.message.answer(get_msg("pdf.error", language=language))
 
     async def process_delete_msg(self, callback: CallbackQuery):
         """Обробник для кнопки 'Прочитано', який просто видаляє повідомлення із чату."""
@@ -790,6 +845,8 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_export_ics, F.data.startswith("export_ics:"))
 
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
+        self.router.callback_query.register(self.process_settings_language, F.data == "settings_language")
+        self.router.callback_query.register(self.process_set_language, F.data.startswith("set_language:"))
 
         # Раути для кастомного нагадування
         self.router.callback_query.register(self.process_settings_reminder, F.data == "settings_reminder")

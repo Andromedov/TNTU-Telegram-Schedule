@@ -2,6 +2,7 @@ import aiosqlite
 from config import DB_PATH
 import os
 import logging
+from typing import Any
 
 EXPECTED_COLUMNS = {
     'group_name': 'TEXT',
@@ -9,7 +10,8 @@ EXPECTED_COLUMNS = {
     'reminder_offset': 'INTEGER DEFAULT 10',
     'notify_evening': 'BOOLEAN DEFAULT 1',
     'is_paused': 'BOOLEAN DEFAULT 0',
-    'notify_schedule_update': 'BOOLEAN DEFAULT 1'
+    'notify_schedule_update': 'BOOLEAN DEFAULT 1',
+    'language': "TEXT DEFAULT 'uk'"
 }
 
 
@@ -42,16 +44,19 @@ async def init_db():
 
         await db.commit()
 
-async def add_or_update_user(user_id: int, group_name: str = None):
+async def add_or_update_user(user_id: int, group_name: str = None, language: str = 'uk'):
     async with aiosqlite.connect(DB_PATH) as db:
         if group_name:
             await db.execute("""
-                             INSERT INTO users (user_id, group_name)
-                             VALUES (?, ?) ON CONFLICT(user_id) DO
+                             INSERT INTO users (user_id, group_name, language)
+                             VALUES (?, ?, ?) ON CONFLICT(user_id) DO
                              UPDATE SET group_name=excluded.group_name
-                             """, (user_id, group_name))
+                             """, (user_id, group_name, language))
         else:
-            await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+            await db.execute(
+                "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, ?)",
+                (user_id, language),
+            )
         await db.commit()
 
 
@@ -67,7 +72,7 @@ async def get_user(user_id: int):
         async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
             return await cursor.fetchone()
 
-async def update_setting(user_id: int, setting: str, value: int):
+async def update_setting(user_id: int, setting: str, value: Any):
     if setting not in EXPECTED_COLUMNS:
         return
     async with aiosqlite.connect(DB_PATH) as db:
