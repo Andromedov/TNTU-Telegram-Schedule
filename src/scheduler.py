@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -6,8 +7,10 @@ import database as db
 import scraper
 import logging
 import re
+from html import escape
 from datetime import datetime, timedelta
 from messages import get_msg, normalize_language
+from reminder_utils import KYIV_TZ, kyiv_now, notifications_are_muted
 
 
 GROUP_CHECK_CONCURRENCY = 8
@@ -34,6 +37,38 @@ def _get_dismiss_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_msg("keyboard.dismiss", language=language), callback_data="delete_msg")]
     ])
+
+
+def _get_reminder_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=get_msg("reminders.snooze_button", language=language),
+            callback_data="snooze_reminder",
+        )],
+        [InlineKeyboardButton(
+            text=get_msg("reminders.mute_today_button", language=language),
+            callback_data="reminder_mute_today",
+        )],
+        [InlineKeyboardButton(
+            text=get_msg("keyboard.dismiss", language=language),
+            callback_data="delete_msg",
+        )],
+    ])
+
+
+def _format_reminder_offset(offset: int, language: str) -> str:
+    if offset >= 60:
+        hours = offset // 60
+        minutes = offset % 60
+        if minutes:
+            return get_msg("reminders.hours_minutes", language=language, hours=hours, minutes=minutes)
+        return get_msg("reminders.hours", language=language, value=hours)
+    return get_msg("reminders.minutes", language=language, value=offset)
+
+
+def _reminder_job_id(user_id: int, group_name: str, class_time: datetime, subject_name: str) -> str:
+    subject_hash = hashlib.sha256(subject_name.encode("utf-8")).hexdigest()[:12]
+    return f"class-reminder:{user_id}:{group_name}:{class_time.strftime('%Y%m%d%H%M')}:{subject_hash}"
 
 
 async def is_active_study_period(target_date: datetime) -> bool:
@@ -203,8 +238,9 @@ async def send_evening_schedule(bot: Bot):
     groups = {}
 
     for user in users:
-        g = user['group_name']
-        if g and user['notify_evening']:
+        user_dict = dict(user)
+        g = user_dict['group_name']
+        if g and user_dict['notify_evening'] and not notifications_are_muted(user_dict):
             if g not in groups:
                 groups[g] = []
             groups[g].append(user)
@@ -249,29 +285,25 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     """Відправляє нагадування про конкретну пару."""
     user = await db.get_user(user_id)
 
-    if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
+    if not user:
+        return
+    user_dict = dict(user)
+    if (notifications_are_muted(user_dict) or not user_dict['notify_10_min']
+            or user_dict['group_name'] != scheduled_group):
         return
 
-    language = normalize_language(dict(user).get("language"))
-    if offset >= 60:
-        hours = offset // 60
-        minutes = offset % 60
-        if minutes:
-            time_str = get_msg("reminders.hours_minutes", language=language, hours=hours, minutes=minutes)
-        else:
-            time_str = get_msg("reminders.hours", language=language, value=hours)
-    else:
-        time_str = get_msg("reminders.minutes", language=language, value=offset)
+    language = normalize_language(user_dict.get("language"))
+    time_str = _format_reminder_offset(offset, language)
 
     text = get_msg("reminders.class_starts", language=language,
-                   time_str=time_str, subject_name=subject_name)
+                   time_str=time_str, subject_name=escape(subject_name))
 
     try:
         await bot.send_message(
             user_id,
             text,
             parse_mode="HTML",
-            reply_markup=_get_dismiss_keyboard(language)
+            reply_markup=_get_reminder_keyboard(language)
         )
     except Exception as e:
         logging.error(f"Помилка відправки нагадування: {e}")
@@ -279,39 +311,95 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     users = await db.get_active_users()
-    tasks = {}
+    groups = {}
 
     for user in users:
         user_dict = dict(user)
         g = user_dict['group_name']
+        # Тимчасово muted користувачів теж плануємо: вони можуть увімкнути
+        # сповіщення пізніше цього дня. Стан повторно перевіряється перед відправкою.
         if g and user_dict.get('notify_10_min', 1):
-            offset = user_dict.get('reminder_offset', 10)
-            key = (g, offset)
-            if key not in tasks:
-                tasks[key] = []
-            tasks[key].append(user_dict['user_id'])
+            groups.setdefault(g, []).append(user_dict)
 
-    for (group_name, offset), user_ids in tasks.items():
+    for group_name, group_users in groups.items():
         schedule = await scraper.parse_schedule_for_today(group_name)
+        actual_classes = [item for item in schedule if not item.get('is_pdf', False)]
 
-        for item in schedule:
-            if item.get('is_pdf', False): continue
+        for class_index, item in enumerate(actual_classes):
             time_parts = item['time'].split('-')[0].split(':')
             try:
-                now = datetime.now()
-                class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]), second=0)
-                reminder_time = class_time - timedelta(minutes=offset)
-
-                if reminder_time > now:
-                    for uid in user_ids:
+                now = kyiv_now()
+                class_time = now.replace(
+                    hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0
+                )
+                for user in group_users:
+                    first_offset = user.get('first_class_reminder_offset')
+                    offset = int(first_offset) if class_index == 0 and first_offset is not None \
+                        else int(user.get('reminder_offset', 10))
+                    reminder_time = class_time - timedelta(minutes=offset)
+                    if reminder_time > now:
+                        uid = user['user_id']
                         scheduler.add_job(
                             send_class_reminder,
                             'date',
                             run_date=reminder_time,
-                            args=[bot, uid, item['name'], group_name, offset]
+                            args=[bot, uid, item['name'], group_name, offset],
+                            id=_reminder_job_id(uid, group_name, class_time, item['name']),
+                            replace_existing=True,
                         )
             except Exception as e:
                 logging.error(f"Помилка створення задачі: {e}")
+
+
+async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
+    """Повторно надсилає нагадування, якщо сповіщення досі активні."""
+    user = await db.get_user(user_id)
+    if not user or notifications_are_muted(dict(user)) or not user['notify_10_min']:
+        return
+    language = normalize_language(dict(user).get("language"))
+    try:
+        await bot.send_message(
+            user_id,
+            html_text,
+            parse_mode="HTML",
+            reply_markup=_get_reminder_keyboard(language),
+        )
+    except Exception as e:
+        logging.error(f"Помилка повторного нагадування користувачу {user_id}: {e}")
+
+
+async def send_morning_digest(bot: Bot, digest_hour: int):
+    """Надсилає ранковий розклад користувачам із вибраною годиною дайджесту."""
+    users = await db.get_active_users()
+    groups = {}
+    for user in users:
+        user_dict = dict(user)
+        if (user_dict.get('group_name') and user_dict.get('morning_digest')
+                and int(user_dict.get('morning_digest_hour') or 7) == digest_hour
+                and not notifications_are_muted(user_dict)):
+            groups.setdefault(user_dict['group_name'], []).append(user_dict)
+
+    for group_name, group_users in groups.items():
+        schedule = await scraper.parse_schedule_for_today(group_name)
+        classes = [item for item in schedule if not item.get('is_pdf', False)]
+        for user in group_users:
+            language = normalize_language(user.get("language"))
+            text = get_msg("reminders.digest_title", language=language, group=escape(group_name)) + "\n"
+            if classes:
+                for item in classes:
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {escape(str(item['name']))}\n"
+            else:
+                text += get_msg("reminders.digest_empty", language=language)
+            try:
+                await bot.send_message(
+                    user['user_id'],
+                    text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=_get_dismiss_keyboard(language),
+                )
+            except Exception as e:
+                logging.error(f"Помилка ранкового дайджесту для {user['user_id']}: {e}")
 
 
 async def check_schedule_updates_task(bot: Bot):
@@ -319,8 +407,9 @@ async def check_schedule_updates_task(bot: Bot):
     users = await db.get_active_users()
     groups = {}
     for user in users:
-        g = user['group_name']
-        if g and user['notify_schedule_update']:
+        user_dict = dict(user)
+        g = user_dict['group_name']
+        if g and user_dict['notify_schedule_update'] and not notifications_are_muted(user_dict):
             if g not in groups:
                 groups[g] = []
             groups[g].append(user)
@@ -347,6 +436,9 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(send_evening_schedule, 'cron', hour=20, minute=0, args=[bot])
     # Нагадування за 10 хвилин до кожної пари (створюється щодня о 6:00 для поточного дня)
     scheduler.add_job(schedule_daily_reminders, 'cron', hour=6, minute=0, args=[bot, scheduler])
+    # Ранковий дайджест у вибрану користувачем годину
+    for digest_hour in (6, 7, 8, 9):
+        scheduler.add_job(send_morning_digest, 'cron', hour=digest_hour, minute=0, args=[bot, digest_hour])
     # Перевірка на оновлення розкладу кожні 2 години
     scheduler.add_job(check_schedule_updates_task, 'interval', hours=2, args=[bot])
     # Переведення на наступний курс (1 серпня о 12:00)

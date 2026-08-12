@@ -20,6 +20,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - 📅 **View Schedule** - Display the classes at any time.
 - 🌙 **Evening Schedule Delivery** - Automatically send tomorrow's schedule every evening at 20:00.
 - ⏰ **10-Minute Reminders** - Get notified 10 minutes before each class starts.
+- 🌅 **Smart Reminders** - Configure the first class separately, receive a morning digest, snooze for five minutes, or mute notifications until tomorrow.
 - 🔔 **Schedule Change Detection** - Get notified when your group's schedule is updated on the website.
 - ⚙️ **Customizable Settings** - Toggle notifications and pause alerts as needed.
 - 🌐 **Ukrainian and English UI** - Choose the interface language in bot settings.
