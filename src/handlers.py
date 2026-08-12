@@ -17,6 +17,7 @@ from messages import get_msg, normalize_language
 from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
+from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
 
 # ==========================================
 #          КЕШ ТА СТАТИСТИКА
@@ -167,7 +168,9 @@ class ScheduleBotHandlers:
             ],
             [
                 InlineKeyboardButton(text=get_msg('keyboard.custom_date', language=language), callback_data="ask_custom_date")
-            ]
+            ],
+            [InlineKeyboardButton(text=get_msg("share.day_button", language=language),
+                                  callback_data=f"share_day:{offset}")]
         ]
 
         if extra_buttons:
@@ -185,7 +188,9 @@ class ScheduleBotHandlers:
                 InlineKeyboardButton(text=get_msg("keyboard.next_week", language=language), callback_data=f"nav_week:{offset + 1}")
             ],
             [InlineKeyboardButton(text=get_msg("keyboard.current_week", language=language), callback_data="nav_week:0")],
-            [InlineKeyboardButton(text=get_msg("keyboard.export_ics", language=language), callback_data=f"export_ics:{offset}")]
+            [InlineKeyboardButton(text=get_msg("keyboard.export_ics", language=language), callback_data=f"export_ics:{offset}")],
+            [InlineKeyboardButton(text=get_msg("share.week_button", language=language),
+                                  callback_data=f"share_week:{offset}")]
         ]
         if extra_buttons: kb.extend(extra_buttons)
         kb.append([InlineKeyboardButton(text=get_msg("keyboard.menu", language=language), callback_data="back_to_main")])
@@ -512,6 +517,71 @@ class ScheduleBotHandlers:
                 await callback.answer(get_msg("schedule.current", language=language))
             else:
                 await callback.answer()
+
+    async def process_share_day(self, callback: CallbackQuery):
+        """Створює окреме повідомлення з денним розкладом для пересилання."""
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
+            return
+
+        try:
+            offset = int(callback.data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await callback.answer(get_msg("share.invalid", language=language), show_alert=True)
+            return
+
+        await callback.answer(get_msg("share.preparing", language=language))
+        target_date = datetime.now() + timedelta(days=offset)
+        schedule = await scraper._get_schedule_for_date(user['group_name'], target_date)
+        shared = build_day_share(user['group_name'], target_date, schedule, language)
+        if not shared:
+            await callback.message.answer(get_msg("share.empty_day", language=language))
+            return
+
+        html_text, plain_text = shared
+        await callback.message.answer(
+            html_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=get_share_message_keyboard(plain_text, language),
+        )
+
+    async def process_share_week(self, callback: CallbackQuery):
+        """Створює окреме повідомлення з тижневим розкладом для пересилання."""
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        if not user or not user['group_name']:
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
+            return
+
+        try:
+            offset_weeks = int(callback.data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            await callback.answer(get_msg("share.invalid", language=language), show_alert=True)
+            return
+
+        await callback.answer(get_msg("share.preparing", language=language))
+        now = datetime.now()
+        monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
+        tasks = [
+            scraper._get_schedule_for_date(user['group_name'], monday + timedelta(days=day_offset))
+            for day_offset in range(7)
+        ]
+        week_schedules = await asyncio.gather(*tasks)
+        shared = build_week_share(user['group_name'], monday, week_schedules, language)
+        if not shared:
+            await callback.message.answer(get_msg("share.empty_week", language=language))
+            return
+
+        html_text, plain_text = shared
+        await callback.message.answer(
+            html_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=get_share_message_keyboard(plain_text, language),
+        )
 
     async def process_export_ics(self, callback: CallbackQuery):
         """Обробник експорту розкладу у файл .ics."""
@@ -843,6 +913,8 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_calendar_selection, F.data.startswith("cal:"))
         self.router.callback_query.register(self.process_ask_custom_date, F.data == "ask_custom_date")
         self.router.callback_query.register(self.process_export_ics, F.data.startswith("export_ics:"))
+        self.router.callback_query.register(self.process_share_day, F.data.startswith("share_day:"))
+        self.router.callback_query.register(self.process_share_week, F.data.startswith("share_week:"))
 
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
         self.router.callback_query.register(self.process_settings_language, F.data == "settings_language")

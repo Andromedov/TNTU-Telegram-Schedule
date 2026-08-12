@@ -62,6 +62,16 @@
       "empty": "❌ На цей тиждень немає пар для експорту.", "error": "❌ Сталася помилка при створенні файлу.",
       "caption": "📲 <b>Ваш файл розкладу готовий!</b>\n\n💡 <i>Як додати в календар:</i>\n1. Завантажте цей файл.\n2. Відкрийте його на своєму пристрої.\n3. Натисніть «Додати всі події» (або аналогічну кнопку)."
     },
+    "share": {
+      "day_button": "📤 Поділитися днем", "week_button": "📤 Поділитися тижнем",
+      "day_title": "📅 Розклад: {day}, {date}", "week_title": "🗓 Розклад на тиждень: {start}–{end}",
+      "group": "🎓 Група: {group}", "footer": "🤖 TNTU Schedule Bot",
+      "copy": "📋 Копіювати", "close": "✖️ Закрити", "preparing": "⏳ Готую повідомлення...",
+      "empty_day": "🏖 На цей день немає пар для поширення.",
+      "empty_week": "🏖 На цей тиждень немає пар для поширення.",
+      "invalid": "❌ Не вдалося визначити потрібний період.",
+      "truncated": "Частину розкладу приховано через ліміт Telegram."
+    },
     "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Натисніть «Відкрити (Web)»."},
     "reminders": {"class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>", "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв"},
     "promotion": {
@@ -121,6 +131,16 @@
     "export": {
       "cooldown": "⏳ Wait 45 seconds before exporting again", "generating": "⏳ Generating file...", "empty": "❌ There are no classes to export this week.",
       "error": "❌ An error occurred while creating the file.", "caption": "📲 <b>Your schedule file is ready!</b>\n\n💡 <i>How to add it to your calendar:</i>\n1. Download the file.\n2. Open it on your device.\n3. Select “Add all events” (or a similar option)."
+    },
+    "share": {
+      "day_button": "📤 Share day", "week_button": "📤 Share week",
+      "day_title": "📅 Schedule: {day}, {date}", "week_title": "🗓 Weekly schedule: {start}–{end}",
+      "group": "🎓 Group: {group}", "footer": "🤖 TNTU Schedule Bot",
+      "copy": "📋 Copy", "close": "✖️ Close", "preparing": "⏳ Preparing message...",
+      "empty_day": "🏖 There are no classes to share on this day.",
+      "empty_week": "🏖 There are no classes to share this week.",
+      "invalid": "❌ Could not determine the requested period.",
+      "truncated": "Part of the schedule was hidden due to Telegram's limit."
     },
     "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Select “Open (Web)”."},
     "reminders": {"class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>", "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min"},
