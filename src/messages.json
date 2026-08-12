@@ -1,46 +1,132 @@
 {
-  "bot": {
-    "started": "Бот запущено!"
+  "uk": {
+    "bot": {"started": "Бот запущено!"},
+    "commands": {"start": "Головне меню бота", "settings": "Налаштування сповіщень"},
+    "keyboard": {
+      "evening": "Розклад ввечері", "pause": "Пауза сповіщень",
+      "schedule_update": "Сповіщення про оновлення розкладу",
+      "show_schedule": "📅 На день", "show_week": "🗓 На тиждень",
+      "settings": "⚙️ Налаштування", "change_group": "🔄 Змінити групу",
+      "back": "🔙 Назад до меню", "custom_date": "📅 Обрати дату",
+      "dismiss": "✅ Прочитано", "menu": "🏠 Меню", "refresh": "🔄 Оновити",
+      "previous_week": "⬅️ Тиждень", "next_week": "Тиждень ➡️",
+      "current_week": "📍 Поточний тиждень", "export_ics": "📲 Експорт у календар (.ics)",
+      "open_web": "👀 Відкрити (Web)", "get_file": "📩 Отримати файлом",
+      "language": "🌐 Мова: Українська"
+    },
+    "start": {
+      "greeting_new": "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):",
+      "greeting_existing": "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>{next_class}",
+      "main_menu_title": "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}",
+      "menu_closed": "<i>Дякую за використання бота! Меню закрито.</i> 🤖",
+      "next_class": "\n\nНаступна пара: ⏰ <b>{time}</b> - {subject}",
+      "no_more_classes": "\n\nНаступна пара: Сьогодні більше пар немає 🎉"
+    },
+    "group": {
+      "checking": "⏳ Перевіряю, чи існує група <b>{group}</b>...",
+      "saved": "✅ Групу <b>{group_name}</b> успішно збережено!",
+      "not_found": "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
+      "need_group": "Спочатку вкажіть групу!",
+      "ask_new": "Введіть нову назву групи (наприклад, СТс-21):",
+      "invalid": "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
+    },
+    "schedule": {
+      "loading": "⏳ Завантажую розклад...", "forming": "⏳ Формую розклад...",
+      "no_classes_today": "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).",
+      "no_classes_week": "🏖 <b>На цей тиждень пар немає.</b>",
+      "day_header": "📅 <b>Розклад на {day}{relative}</b>\n🗓 Дата: {date}\n🎓 Група: <b>{group}</b>\n\n",
+      "week_header": "🗓 <b>Розклад на тиждень ({start} - {end})</b>\n🎓 Група: <b>{group}</b>\n\n",
+      "weekdays": "Понеділок|Вівторок|Середа|Четвер|П'ятниця|Субота|Неділя",
+      "today_relative": " (Сьогодні)", "tomorrow_relative": " (Завтра)", "yesterday_relative": " (Вчора)",
+      "evening_title": "🌙 <b>Розклад на завтра:</b>\n",
+      "changed": "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!",
+      "ask_date": "📅 <b>Оберіть потрібну дату:</b>\nВикористовуйте календар нижче або швидкі кнопки.",
+      "truncated": "<i>... (частину розкладу приховано через ліміт Telegram)</i>",
+      "updated": "🔄 Оновлено!", "current": "✅ Розклад актуальний."
+    },
+    "settings": {
+      "title": "⚙️ <b>Налаштування сповіщень:</b>", "updated": "Налаштування оновлено!",
+      "saved": "Налаштування збережено!", "choose_reminder": "⏳ <b>Оберіть час нагадування перед початком пари:</b>",
+      "reminder_off": "❌ Нагадування (Вимкнено)", "reminder_minutes": "✅ Нагадування ({minutes} хв)",
+      "reminder_hour": "✅ Нагадування (1 год)", "reminder_hour_half": "✅ Нагадування (1.5 год)",
+      "disable": "Вимкнути повністю ❌", "minutes": "{minutes} хв", "one_hour": "1 година", "hour_half": "1.5 години",
+      "choose_language": "🌐 <b>Оберіть мову інтерфейсу:</b>", "language_changed": "Мову змінено на українську 🇺🇦"
+    },
+    "calendar": {
+      "months": "Січень|Лютий|Березень|Квітень|Травень|Червень|Липень|Серпень|Вересень|Жовтень|Листопад|Грудень",
+      "weekdays_short": "Пн|Вт|Ср|Чт|Пт|Сб|Нд", "today": "🎯 Сьогодні", "tomorrow": "⏩ Завтра", "back": "🔙 Назад",
+      "navigation_error": "❌ Помилка навігації по календарю.", "selection_error": "❌ Помилка вибору дати."
+    },
+    "export": {
+      "cooldown": "⏳ Зачекайте 45 сек перед наступним експортом", "generating": "⏳ Генерую файл...",
+      "empty": "❌ На цей тиждень немає пар для експорту.", "error": "❌ Сталася помилка при створенні файлу.",
+      "caption": "📲 <b>Ваш файл розкладу готовий!</b>\n\n💡 <i>Як додати в календар:</i>\n1. Завантажте цей файл.\n2. Відкрийте його на своєму пристрої.\n3. Натисніть «Додати всі події» (або аналогічну кнопку)."
+    },
+    "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Натисніть «Відкрити (Web)»."},
+    "reminders": {"class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>", "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв"},
+    "promotion": {
+      "graduated": "🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\nГрупа <b>{group}</b> більше не доступна на сайті розкладу.\n<i>Якщо ви продовжуєте навчання в іншій групі, змініть групу в налаштуваннях бота.</i>",
+      "promoted": "🎓 <b>Вітаємо з новим навчальним роком!</b>\n\nВашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>."
+    }
   },
-  "keyboard": {
-    "10_min": "Нагадування за 10 хв",
-    "evening": "Розклад ввечері",
-    "pause": "Пауза сповіщень",
-    "schedule_update": "Сповіщення про оновлення розкладу",
-    "show_schedule": "📅 На день",
-    "show_week": "🗓 На тиждень",
-    "settings": "⚙️ Налаштування",
-    "change_group": "🔄 Змінити групу",
-    "back": "🔙 Назад до меню",
-    "custom_date": "📅 Обрати дату",
-    "dismiss": "✅ Прочитано"
-  },
-  "start": {
-    "greeting_new": "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):",
-    "greeting_existing": "👋 Вітаю, {name}!\nТвоя група: <b>{group}</b>{next_class}",
-    "use_menu": "Для взаємодії використовуйте меню нижче. Якщо хочете змінити групу, натисніть 'Змінити групу'.",
-    "main_menu_title": "🏠 Головне меню\nТвоя група: <b>{group}</b>{next_class}"
-  },
-  "group": {
-    "checking": "⏳ Перевіряю чи існує група <b>{group}</b>...",
-    "saved": "✅ Групу <b>{group_name}</b> успішно збережено!",
-    "not_found": "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
-    "need_group": "Спочатку вкажіть групу!",
-    "ask_new": "Введіть нову назву групи (наприклад, СТс-21):"
-  },
-  "schedule": {
-    "loading": "⏳ Завантажую розклад...",
-    "no_classes_today": "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).",
-    "today_title": "📅 <b>Розклад на сьогодні ({group}):</b>\n\n",
-    "evening_title": "📅 <b>Розклад на завтра:</b>\n\n",
-    "changed": "⚠️ Увага! Розклад для вашої групи на сайті було змінено. Перевірте актуальні пари.",
-    "ask_date": "📅 <b>Оберіть потрібну дату:</b>\nВикористовуйте календар нижче або швидкі кнопки."
-  },
-  "settings": {
-    "title": "⚙️ <b>Налаштування сповіщень:</b>",
-    "updated": "Налаштування оновлено!"
-  },
-  "reminders": {
-    "class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>"
+  "en": {
+    "bot": {"started": "Bot started!"},
+    "commands": {"start": "Open the main menu", "settings": "Notification settings"},
+    "keyboard": {
+      "evening": "Evening schedule", "pause": "Pause notifications", "schedule_update": "Schedule update alerts",
+      "show_schedule": "📅 Daily schedule", "show_week": "🗓 Weekly schedule", "settings": "⚙️ Settings",
+      "change_group": "🔄 Change group", "back": "🔙 Back to menu", "custom_date": "📅 Choose a date",
+      "dismiss": "✅ Dismiss", "menu": "🏠 Menu", "refresh": "🔄 Refresh", "previous_week": "⬅️ Week",
+      "next_week": "Week ➡️", "current_week": "📍 Current week", "export_ics": "📲 Export to calendar (.ics)",
+      "open_web": "👀 Open (Web)", "get_file": "📩 Get file", "language": "🌐 Language: English"
+    },
+    "start": {
+      "greeting_new": "👋 Hi! I can help you follow the TNTU class schedule.\n\nPlease enter your group name (for example, СТс-21):",
+      "greeting_existing": "👋 Welcome, {name}!\nYour group: <b>{group}</b>{next_class}",
+      "main_menu_title": "🏠 Main menu\nYour group: <b>{group}</b>{next_class}",
+      "menu_closed": "<i>Thank you for using the bot! Menu closed.</i> 🤖",
+      "next_class": "\n\nNext class: ⏰ <b>{time}</b> - {subject}",
+      "no_more_classes": "\n\nNext class: No more classes today 🎉"
+    },
+    "group": {
+      "checking": "⏳ Checking whether group <b>{group}</b> exists...", "saved": "✅ Group <b>{group_name}</b> was saved!",
+      "not_found": "❌ Group <b>{group}</b> was not found on the TNTU website or has no schedule.\n\nCheck the spelling (for example, СТс-21 or КН-31) and try again:",
+      "need_group": "Please set your group first!", "ask_new": "Enter a new group name (for example, СТс-21):",
+      "invalid": "❌ <b>Invalid format!</b> A group name must contain letters and digits (for example, СТс-21 or ЕМ-31).\n\nPlease try again:"
+    },
+    "schedule": {
+      "loading": "⏳ Loading schedule...", "forming": "⏳ Preparing schedule...",
+      "no_classes_today": "🏖 <b>No classes on this day</b> (or the schedule was not found).",
+      "no_classes_week": "🏖 <b>No classes this week.</b>",
+      "day_header": "📅 <b>Schedule for {day}{relative}</b>\n🗓 Date: {date}\n🎓 Group: <b>{group}</b>\n\n",
+      "week_header": "🗓 <b>Weekly schedule ({start} - {end})</b>\n🎓 Group: <b>{group}</b>\n\n",
+      "weekdays": "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday",
+      "today_relative": " (Today)", "tomorrow_relative": " (Tomorrow)", "yesterday_relative": " (Yesterday)",
+      "evening_title": "🌙 <b>Tomorrow's schedule:</b>\n", "changed": "⚠️ <b>Attention!</b> Your group's schedule has changed on the TNTU website!",
+      "ask_date": "📅 <b>Choose a date:</b>\nUse the calendar or the quick buttons below.", "truncated": "<i>... (part of the schedule was hidden due to Telegram's limit)</i>",
+      "updated": "🔄 Updated!", "current": "✅ Schedule is up to date."
+    },
+    "settings": {
+      "title": "⚙️ <b>Notification settings:</b>", "updated": "Settings updated!", "saved": "Settings saved!",
+      "choose_reminder": "⏳ <b>Choose how early to remind you before class:</b>", "reminder_off": "❌ Reminder (Off)",
+      "reminder_minutes": "✅ Reminder ({minutes} min)", "reminder_hour": "✅ Reminder (1 hour)", "reminder_hour_half": "✅ Reminder (1.5 hours)",
+      "disable": "Disable completely ❌", "minutes": "{minutes} min", "one_hour": "1 hour", "hour_half": "1.5 hours",
+      "choose_language": "🌐 <b>Choose the interface language:</b>", "language_changed": "Language changed to English 🇬🇧"
+    },
+    "calendar": {
+      "months": "January|February|March|April|May|June|July|August|September|October|November|December",
+      "weekdays_short": "Mon|Tue|Wed|Thu|Fri|Sat|Sun", "today": "🎯 Today", "tomorrow": "⏩ Tomorrow", "back": "🔙 Back",
+      "navigation_error": "❌ Calendar navigation error.", "selection_error": "❌ Invalid date selection."
+    },
+    "export": {
+      "cooldown": "⏳ Wait 45 seconds before exporting again", "generating": "⏳ Generating file...", "empty": "❌ There are no classes to export this week.",
+      "error": "❌ An error occurred while creating the file.", "caption": "📲 <b>Your schedule file is ready!</b>\n\n💡 <i>How to add it to your calendar:</i>\n1. Download the file.\n2. Open it on your device.\n3. Select “Add all events” (or a similar option)."
+    },
+    "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Select “Open (Web)”."},
+    "reminders": {"class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>", "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min"},
+    "promotion": {
+      "graduated": "🎓 <b>Congratulations on completing this stage of your studies!</b>\n\nGroup <b>{group}</b> is no longer available on the schedule website.\n<i>If you continue in another group, change it in the bot settings.</i>",
+      "promoted": "🎓 <b>Welcome to the new academic year!</b>\n\nYour group was automatically changed from <b>{old_group}</b> to <b>{new_group}</b>."
+    }
   }
 }

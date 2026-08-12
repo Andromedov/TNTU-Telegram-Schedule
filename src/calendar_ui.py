@@ -1,14 +1,13 @@
 import calendar
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from messages import get_msg
 
 
-def get_calendar_keyboard(year: int, month: int) -> InlineKeyboardMarkup:
+def get_calendar_keyboard(year: int, month: int, language: str = "uk") -> InlineKeyboardMarkup:
     """Генерує інлайн-календар з додатковими швидкими кнопками."""
     kb = []
 
-    # Назви місяців українською
-    month_names = ["", "Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
-                   "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"]
+    month_names = [""] + get_msg("calendar.months", language=language).split("|")
 
     # Перший ряд: Кнопки перемикання місяців
     kb.append([
@@ -18,7 +17,7 @@ def get_calendar_keyboard(year: int, month: int) -> InlineKeyboardMarkup:
     ])
 
     # Другий ряд: Дні тижня
-    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"]
+    weekdays = get_msg("calendar.weekdays_short", language=language).split("|")
     kb.append([InlineKeyboardButton(text=day, callback_data="cal:ignore") for day in weekdays])
 
     # Наступні ряди: Дні місяця
@@ -33,11 +32,11 @@ def get_calendar_keyboard(year: int, month: int) -> InlineKeyboardMarkup:
         kb.append(row)
 
     kb.append([
-        InlineKeyboardButton(text="🎯 Сьогодні", callback_data="cal:today"),
-        InlineKeyboardButton(text="⏩ Завтра", callback_data="cal:tomorrow")
+        InlineKeyboardButton(text=get_msg("calendar.today", language=language), callback_data="cal:today"),
+        InlineKeyboardButton(text=get_msg("calendar.tomorrow", language=language), callback_data="cal:tomorrow")
     ])
 
     # Кнопка назад до сьогоднішнього розкладу
-    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="nav_schedule:0")])
+    kb.append([InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="nav_schedule:0")])
 
     return InlineKeyboardMarkup(inline_keyboard=kb)

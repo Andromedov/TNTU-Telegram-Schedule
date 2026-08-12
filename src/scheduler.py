@@ -7,7 +7,7 @@ import scraper
 import logging
 import re
 from datetime import datetime, timedelta
-from messages import get_msg
+from messages import get_msg, normalize_language
 
 
 GROUP_CHECK_CONCURRENCY = 8
@@ -29,10 +29,10 @@ def _next_group_candidate(group_name: str) -> str | None:
     return f"{prefix}{next_number}{suffix}"
 
 
-def _get_dismiss_keyboard() -> InlineKeyboardMarkup:
+def _get_dismiss_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
     """Генерує клавіатуру з однією кнопкою для видалення повідомлення."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_msg("keyboard.dismiss", "✅ Прочитано"), callback_data="delete_msg")]
+        [InlineKeyboardButton(text=get_msg("keyboard.dismiss", language=language), callback_data="delete_msg")]
     ])
 
 
@@ -154,26 +154,25 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                 if new_group == "GRADUATED":
                     await db.clear_user_group(user['user_id'])
                     graduated_count += 1
+                    language = normalize_language(dict(user).get("language"))
                     try:
                         await bot.send_message(
                             user['user_id'],
-                            f"🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\n"
-                            f"Група <b>{old_group}</b> більше не доступна на сайті розкладу.\n"
-                            f"<i>Якщо ви продовжуєте навчання в іншій групі (наприклад, магістратурі), змініть групу в налаштуваннях бота.</i>",
+                            get_msg("promotion.graduated", language=language, group=old_group),
                             parse_mode="HTML",
-                            reply_markup=_get_dismiss_keyboard()
+                            reply_markup=_get_dismiss_keyboard(language)
                         )
                     except Exception as e:
                         logging.warning(f"Не вдалося повідомити випускника {user['user_id']}: {e}")
                 else:
                     await db.add_or_update_user(user['user_id'], new_group)
+                    language = normalize_language(dict(user).get("language"))
                     try:
                         await bot.send_message(
                             user['user_id'],
-                            f"🎓 <b>Вітаємо з новим навчальним роком!</b>\n\n"
-                            f"Вашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>.",
+                            get_msg("promotion.promoted", language=language, old_group=old_group, new_group=new_group),
                             parse_mode="HTML",
-                            reply_markup=_get_dismiss_keyboard()
+                            reply_markup=_get_dismiss_keyboard(language)
                         )
                         promoted_count += 1
                     except Exception:
@@ -222,25 +221,25 @@ async def send_evening_schedule(bot: Bot):
             if is_weekend or not is_active_semester:
                 continue
 
-        text = get_msg("schedule.evening_title", "🌙 <b>Розклад на завтра:</b>") + "\n"
-        has_pdf = False
-        for item in schedule:
-            if item.get('is_pdf'):
-                if not has_pdf:
-                    text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
-                    has_pdf = True
-                text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
-            else:
-                text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
-
         for user in group_users:
+            language = normalize_language(dict(user).get("language"))
+            text = get_msg("schedule.evening_title", language=language) + "\n"
+            has_pdf = False
+            for item in schedule:
+                if item.get('is_pdf'):
+                    if not has_pdf:
+                        text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
+                        has_pdf = True
+                    text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
+                else:
+                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
             try:
                 await bot.send_message(
                     user['user_id'],
                     text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
-                    reply_markup=_get_dismiss_keyboard()
+                    reply_markup=_get_dismiss_keyboard(language)
                 )
             except Exception as e:
                 logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
@@ -253,17 +252,18 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     if not user or user['is_paused'] or not user['notify_10_min'] or user['group_name'] != scheduled_group:
         return
 
+    language = normalize_language(dict(user).get("language"))
     if offset >= 60:
         hours = offset // 60
         minutes = offset % 60
         if minutes:
-            time_str = f"{hours} год {minutes} хв"
+            time_str = get_msg("reminders.hours_minutes", language=language, hours=hours, minutes=minutes)
         else:
-            time_str = f"{hours} год"
+            time_str = get_msg("reminders.hours", language=language, value=hours)
     else:
-        time_str = f"{offset} хв"
+        time_str = get_msg("reminders.minutes", language=language, value=offset)
 
-    text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
+    text = get_msg("reminders.class_starts", language=language,
                    time_str=time_str, subject_name=subject_name)
 
     try:
@@ -271,7 +271,7 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
             user_id,
             text,
             parse_mode="HTML",
-            reply_markup=_get_dismiss_keyboard()
+            reply_markup=_get_dismiss_keyboard(language)
         )
     except Exception as e:
         logging.error(f"Помилка відправки нагадування: {e}")
@@ -329,12 +329,13 @@ async def check_schedule_updates_task(bot: Bot):
         has_changes = await scraper.check_schedule_changes(group_name)
         if has_changes:
             for user in group_users:
+                language = normalize_language(dict(user).get("language"))
                 try:
                     await bot.send_message(
                         user['user_id'],
-                        get_msg("schedule.changed", "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!"),
+                        get_msg("schedule.changed", language=language),
                         parse_mode="HTML",
-                        reply_markup=_get_dismiss_keyboard()
+                        reply_markup=_get_dismiss_keyboard(language)
                     )
                 except:
                     pass

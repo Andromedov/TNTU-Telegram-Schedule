@@ -17,16 +17,27 @@ def load_messages():
 
 
 messages = load_messages()
+SUPPORTED_LANGUAGES = ("uk", "en")
+DEFAULT_LANGUAGE = "uk"
 
 
-def get_msg(key: str, default: str = None, **kwargs) -> str:
+def normalize_language(language: str | None) -> str:
+    """Нормалізує Telegram/БД locale до підтримуваної мови."""
+    if not language:
+        return DEFAULT_LANGUAGE
+    normalized = language.lower().split("-", 1)[0].split("_", 1)[0]
+    return normalized if normalized in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def get_msg(key: str, default: str = None, *, language: str = DEFAULT_LANGUAGE, **kwargs) -> str:
     """
     Повертає повідомлення по ключу (підтримує вкладені ключі через крапку, напр. 'bot.greeting')
     та форматує його, якщо передані аргументи.
     Якщо ключ не знайдено, повертає default (якщо передано), або повідомлення про помилку.
     """
     keys = key.split('.')
-    msg = messages
+    language = normalize_language(language)
+    msg = messages.get(language, messages)
 
     for k in keys:
         if isinstance(msg, dict) and k in msg:
@@ -34,6 +45,15 @@ def get_msg(key: str, default: str = None, **kwargs) -> str:
         else:
             msg = None
             break
+
+    if msg is None and language != DEFAULT_LANGUAGE:
+        msg = messages.get(DEFAULT_LANGUAGE, {})
+        for k in keys:
+            if isinstance(msg, dict) and k in msg:
+                msg = msg[k]
+            else:
+                msg = None
+                break
 
     if msg is None:
         msg = default if default is not None else f"Missing message: {key}"

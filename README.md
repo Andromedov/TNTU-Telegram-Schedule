@@ -22,6 +22,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - ⏰ **10-Minute Reminders** - Get notified 10 minutes before each class starts.
 - 🔔 **Schedule Change Detection** - Get notified when your group's schedule is updated on the website.
 - ⚙️ **Customizable Settings** - Toggle notifications and pause alerts as needed.
+- 🌐 **Ukrainian and English UI** - Choose the interface language in bot settings.
 - 🔄 **Group Management** - Easily switch between different study groups.
 - 📄 **PDF Support** - Direct links to official PDF schedules when available.
 
@@ -83,6 +84,7 @@ TNTU-Telegram-Schedule/
 │   ├── scraper.py           # TNTU website scraping logic
 │   ├── scheduler.py         # Automated tasks and reminders
 │   ├── database.py          # SQLite database operations
+│   ├── messages.py          # Localization loading and locale fallback
 │   └── messages.json        # Localization and UI text
 ├── data/                    # Automatically generated (DB & caches)
 ├── .env.example             # Environment variables template
@@ -91,7 +93,9 @@ TNTU-Telegram-Schedule/
 ```
 
 ## 📝 Localization
-The bot uses a JSON-based localization system. You can modify button labels, user-facing messages, and notification templates by editing `src/messages.json`.
+The bot supports Ukrainian (`uk`) and English (`en`). Users can switch language in **Settings → Language**, and the preference is stored in SQLite. New users start with English when Telegram reports an English locale; all other or unknown locales fall back to Ukrainian.
+
+Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/messages.json`. Missing English keys automatically fall back to Ukrainian.
 
 ## 📜 License
 
