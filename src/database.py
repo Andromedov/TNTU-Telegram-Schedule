@@ -11,7 +11,11 @@ EXPECTED_COLUMNS = {
     'notify_evening': 'BOOLEAN DEFAULT 1',
     'is_paused': 'BOOLEAN DEFAULT 0',
     'notify_schedule_update': 'BOOLEAN DEFAULT 1',
-    'language': "TEXT DEFAULT 'uk'"
+    'language': "TEXT DEFAULT 'uk'",
+    'first_class_reminder_offset': 'INTEGER',
+    'morning_digest': 'BOOLEAN DEFAULT 0',
+    'morning_digest_hour': 'INTEGER DEFAULT 7',
+    'notifications_muted_until': 'TEXT'
 }
 
 

@@ -50,7 +50,15 @@
       "reminder_off": "❌ Нагадування (Вимкнено)", "reminder_minutes": "✅ Нагадування ({minutes} хв)",
       "reminder_hour": "✅ Нагадування (1 год)", "reminder_hour_half": "✅ Нагадування (1.5 год)",
       "disable": "Вимкнути повністю ❌", "minutes": "{minutes} хв", "one_hour": "1 година", "hour_half": "1.5 години",
-      "choose_language": "🌐 <b>Оберіть мову інтерфейсу:</b>", "language_changed": "Мову змінено на українську 🇺🇦"
+      "choose_language": "🌐 <b>Оберіть мову інтерфейсу:</b>", "language_changed": "Мову змінено на українську 🇺🇦",
+      "first_reminder_default": "🌅 Перша пара: як для інших",
+      "first_reminder_minutes": "🌅 Перша пара: за {minutes} хв",
+      "choose_first_reminder": "🌅 <b>Коли нагадувати про першу пару?</b>",
+      "same_as_other": "Як для інших пар",
+      "digest_enabled": "☀️ Ранковий дайджест: {hour}:00", "digest_disabled": "🌙 Ранковий дайджест: вимкнено",
+      "choose_digest": "☀️ <b>Оберіть час ранкового дайджесту:</b>", "digest_off": "Вимкнути дайджест ❌",
+      "mute_today": "🔕 Вимкнути сповіщення на сьогодні", "unmute_today": "🔔 Увімкнути сповіщення сьогодні",
+      "invalid_value": "❌ Некоректне значення налаштування."
     },
     "calendar": {
       "months": "Січень|Лютий|Березень|Квітень|Травень|Червень|Липень|Серпень|Вересень|Жовтень|Листопад|Грудень",
@@ -73,7 +81,15 @@
       "truncated": "Частину розкладу приховано через ліміт Telegram."
     },
     "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Натисніть «Відкрити (Web)»."},
-    "reminders": {"class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>", "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв"},
+    "reminders": {
+      "class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
+      "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв",
+      "snooze_button": "⏰ Нагадати через 5 хв", "mute_today_button": "🔕 Не турбувати сьогодні",
+      "snoozed": "Нагадаю через 5 хвилин!", "snooze_unavailable": "❌ Не вдалося відкласти нагадування.",
+      "muted_today": "🔕 Автоматичні сповіщення вимкнено до завтра.",
+      "unmuted_today": "🔔 Автоматичні сповіщення знову ввімкнено.",
+      "digest_title": "☀️ <b>Розклад на сьогодні для {group}:</b>", "digest_empty": "🏖 Сьогодні пар немає."
+    },
     "promotion": {
       "graduated": "🎓 <b>Вітаємо із завершенням навчального етапу!</b>\n\nГрупа <b>{group}</b> більше не доступна на сайті розкладу.\n<i>Якщо ви продовжуєте навчання в іншій групі, змініть групу в налаштуваннях бота.</i>",
       "promoted": "🎓 <b>Вітаємо з новим навчальним роком!</b>\n\nВашу групу було автоматично переведено з <b>{old_group}</b> на <b>{new_group}</b>."
@@ -121,7 +137,15 @@
       "choose_reminder": "⏳ <b>Choose how early to remind you before class:</b>", "reminder_off": "❌ Reminder (Off)",
       "reminder_minutes": "✅ Reminder ({minutes} min)", "reminder_hour": "✅ Reminder (1 hour)", "reminder_hour_half": "✅ Reminder (1.5 hours)",
       "disable": "Disable completely ❌", "minutes": "{minutes} min", "one_hour": "1 hour", "hour_half": "1.5 hours",
-      "choose_language": "🌐 <b>Choose the interface language:</b>", "language_changed": "Language changed to English 🇬🇧"
+      "choose_language": "🌐 <b>Choose the interface language:</b>", "language_changed": "Language changed to English 🇬🇧",
+      "first_reminder_default": "🌅 First class: same as others",
+      "first_reminder_minutes": "🌅 First class: {minutes} min early",
+      "choose_first_reminder": "🌅 <b>When should the first-class reminder arrive?</b>",
+      "same_as_other": "Same as other classes",
+      "digest_enabled": "☀️ Morning digest: {hour}:00", "digest_disabled": "🌙 Morning digest: off",
+      "choose_digest": "☀️ <b>Choose the morning digest time:</b>", "digest_off": "Disable digest ❌",
+      "mute_today": "🔕 Mute notifications for today", "unmute_today": "🔔 Resume notifications today",
+      "invalid_value": "❌ Invalid setting value."
     },
     "calendar": {
       "months": "January|February|March|April|May|June|July|August|September|October|November|December",
@@ -143,7 +167,15 @@
       "truncated": "Part of the schedule was hidden due to Telegram's limit."
     },
     "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Select “Open (Web)”."},
-    "reminders": {"class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>", "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min"},
+    "reminders": {
+      "class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>",
+      "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min",
+      "snooze_button": "⏰ Remind me in 5 min", "mute_today_button": "🔕 Mute for today",
+      "snoozed": "I will remind you in 5 minutes!", "snooze_unavailable": "❌ Could not snooze this reminder.",
+      "muted_today": "🔕 Automatic notifications are muted until tomorrow.",
+      "unmuted_today": "🔔 Automatic notifications are enabled again.",
+      "digest_title": "☀️ <b>Today's schedule for {group}:</b>", "digest_empty": "🏖 There are no classes today."
+    },
     "promotion": {
       "graduated": "🎓 <b>Congratulations on completing this stage of your studies!</b>\n\nGroup <b>{group}</b> is no longer available on the schedule website.\n<i>If you continue in another group, change it in the bot settings.</i>",
       "promoted": "🎓 <b>Welcome to the new academic year!</b>\n\nYour group was automatically changed from <b>{old_group}</b> to <b>{new_group}</b>."

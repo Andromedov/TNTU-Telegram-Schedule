@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramBadRequest
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 import logging
 import asyncio
@@ -12,12 +13,13 @@ import hashlib
 
 import database as db
 import scraper
-from scheduler import promote_groups_dry_run
+from scheduler import promote_groups_dry_run, send_snoozed_reminder
 from messages import get_msg, normalize_language
 from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
 from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
+from reminder_utils import kyiv_now, muted_until_tomorrow, temporary_notifications_are_muted
 
 # ==========================================
 #          КЕШ ТА СТАТИСТИКА
@@ -42,8 +44,9 @@ class UserState(StatesGroup):
 
 
 class ScheduleBotHandlers:
-    def __init__(self, router: Router):
+    def __init__(self, router: Router, scheduler: AsyncIOScheduler | None = None):
         self.router = router
+        self.scheduler = scheduler
         self._register_handlers()
 
     @staticmethod
@@ -114,6 +117,9 @@ class ScheduleBotHandlers:
         language = ScheduleBotHandlers._user_language(user_dict)
         notify_enabled = user_dict.get('notify_10_min', 1)
         offset = user_dict.get('reminder_offset', 10)
+        first_offset = user_dict.get('first_class_reminder_offset')
+        digest_enabled = user_dict.get('morning_digest', 0)
+        digest_hour = int(user_dict.get('morning_digest_hour') or 7)
 
         if not notify_enabled:
             remind_text = get_msg("settings.reminder_off", language=language)
@@ -124,8 +130,29 @@ class ScheduleBotHandlers:
         else:
             remind_text = get_msg("settings.reminder_minutes", language=language, minutes=offset)
 
+        if first_offset is None:
+            first_remind_text = get_msg("settings.first_reminder_default", language=language)
+        else:
+            first_remind_text = get_msg(
+                "settings.first_reminder_minutes", language=language, minutes=first_offset
+            )
+        digest_text = get_msg(
+            "settings.digest_enabled" if digest_enabled else "settings.digest_disabled",
+            language=language,
+            hour=digest_hour,
+        )
+        mute_text = get_msg(
+            "settings.unmute_today" if temporary_notifications_are_muted(user_dict) else "settings.mute_today",
+            language=language,
+        )
+        mute_callback = "settings_unmute_today" if temporary_notifications_are_muted(user_dict) \
+            else "settings_mute_today"
+
         kb = [
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
+            [InlineKeyboardButton(text=first_remind_text, callback_data="settings_first_reminder")],
+            [InlineKeyboardButton(text=digest_text, callback_data="settings_digest")],
+            [InlineKeyboardButton(text=mute_text, callback_data=mute_callback)],
             [InlineKeyboardButton(
                 text=f"{'✅' if user_dict.get('notify_evening', 1) else '❌'} {get_msg('keyboard.evening', language=language)}",
                 callback_data="toggle_evening"
@@ -154,6 +181,36 @@ class ScheduleBotHandlers:
             [InlineKeyboardButton(text=get_msg("settings.one_hour", language=language), callback_data="set_remind:60"),
              InlineKeyboardButton(text=get_msg("settings.hour_half", language=language), callback_data="set_remind:90")],
             [InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_first_reminder_settings_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
+        kb = [
+            [InlineKeyboardButton(text=get_msg("settings.same_as_other", language=language),
+                                  callback_data="set_first_remind:default")],
+            [InlineKeyboardButton(text=get_msg("settings.minutes", language=language, minutes=15),
+                                  callback_data="set_first_remind:15"),
+             InlineKeyboardButton(text=get_msg("settings.minutes", language=language, minutes=30),
+                                  callback_data="set_first_remind:30")],
+            [InlineKeyboardButton(text=get_msg("settings.one_hour", language=language),
+                                  callback_data="set_first_remind:60"),
+             InlineKeyboardButton(text=get_msg("settings.hour_half", language=language),
+                                  callback_data="set_first_remind:90")],
+            [InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")],
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_digest_settings_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
+        kb = [
+            [InlineKeyboardButton(text=get_msg("settings.digest_off", language=language),
+                                  callback_data="set_digest:off")],
+            [InlineKeyboardButton(text="06:00", callback_data="set_digest:6"),
+             InlineKeyboardButton(text="07:00", callback_data="set_digest:7")],
+            [InlineKeyboardButton(text="08:00", callback_data="set_digest:8"),
+             InlineKeyboardButton(text="09:00", callback_data="set_digest:9")],
+            [InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")],
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -725,6 +782,106 @@ class ScheduleBotHandlers:
         )
         await callback.answer(get_msg("settings.saved", language=language))
 
+    async def process_settings_first_reminder(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_first_reminder", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_first_reminder_settings_keyboard(language),
+        )
+        await callback.answer()
+
+    async def process_set_first_remind(self, callback: CallbackQuery):
+        raw_value = callback.data.split(":", 1)[1]
+        if raw_value not in {"default", "15", "30", "60", "90"}:
+            language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        value = None if raw_value == "default" else int(raw_value)
+        await db.update_setting(callback.from_user.id, "first_class_reminder_offset", value)
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.title", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_settings_keyboard(user),
+        )
+        await callback.answer(get_msg("settings.saved", language=language))
+
+    async def process_settings_digest(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_digest", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_digest_settings_keyboard(language),
+        )
+        await callback.answer()
+
+    async def process_set_digest(self, callback: CallbackQuery):
+        raw_value = callback.data.split(":", 1)[1]
+        if raw_value not in {"off", "6", "7", "8", "9"}:
+            language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        if raw_value == "off":
+            await db.update_setting(callback.from_user.id, "morning_digest", 0)
+        else:
+            hour = int(raw_value)
+            await db.update_setting(callback.from_user.id, "morning_digest_hour", hour)
+            await db.update_setting(callback.from_user.id, "morning_digest", 1)
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.title", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_settings_keyboard(user),
+        )
+        await callback.answer(get_msg("settings.saved", language=language))
+
+    async def process_settings_mute_today(self, callback: CallbackQuery):
+        await db.update_setting(callback.from_user.id, "notifications_muted_until", muted_until_tomorrow())
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(user))
+        await callback.answer(get_msg("reminders.muted_today", language=language), show_alert=True)
+
+    async def process_settings_unmute_today(self, callback: CallbackQuery):
+        await db.update_setting(callback.from_user.id, "notifications_muted_until", None)
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_reply_markup(reply_markup=self.get_settings_keyboard(user))
+        await callback.answer(get_msg("reminders.unmuted_today", language=language))
+
+    async def process_reminder_mute_today(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await db.update_setting(callback.from_user.id, "notifications_muted_until", muted_until_tomorrow())
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer(get_msg("reminders.muted_today", language=language), show_alert=True)
+
+    async def process_snooze_reminder(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        if self.scheduler is None:
+            await callback.answer(get_msg("reminders.snooze_unavailable", language=language), show_alert=True)
+            return
+
+        html_text = callback.message.html_text or callback.message.text
+        if not html_text:
+            await callback.answer(get_msg("reminders.snooze_unavailable", language=language), show_alert=True)
+            return
+
+        run_date = kyiv_now() + timedelta(minutes=5)
+        message_id = callback.message.message_id
+        self.scheduler.add_job(
+            send_snoozed_reminder,
+            "date",
+            run_date=run_date,
+            args=[callback.bot, callback.from_user.id, html_text],
+            id=f"snooze:{callback.from_user.id}:{message_id}",
+            replace_existing=True,
+        )
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer(get_msg("reminders.snoozed", language=language))
+
     async def process_settings_language(self, callback: CallbackQuery):
         language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         await callback.message.edit_text(
@@ -923,6 +1080,16 @@ class ScheduleBotHandlers:
         # Раути для кастомного нагадування
         self.router.callback_query.register(self.process_settings_reminder, F.data == "settings_reminder")
         self.router.callback_query.register(self.process_set_remind, F.data.startswith("set_remind:"))
+        self.router.callback_query.register(
+            self.process_settings_first_reminder, F.data == "settings_first_reminder"
+        )
+        self.router.callback_query.register(self.process_set_first_remind, F.data.startswith("set_first_remind:"))
+        self.router.callback_query.register(self.process_settings_digest, F.data == "settings_digest")
+        self.router.callback_query.register(self.process_set_digest, F.data.startswith("set_digest:"))
+        self.router.callback_query.register(self.process_settings_mute_today, F.data == "settings_mute_today")
+        self.router.callback_query.register(self.process_settings_unmute_today, F.data == "settings_unmute_today")
+        self.router.callback_query.register(self.process_reminder_mute_today, F.data == "reminder_mute_today")
+        self.router.callback_query.register(self.process_snooze_reminder, F.data == "snooze_reminder")
 
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
