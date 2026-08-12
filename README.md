@@ -25,6 +25,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - 🌐 **Ukrainian and English UI** - Choose the interface language in bot settings.
 - 🔄 **Group Management** - Easily switch between different study groups.
 - 📄 **PDF Support** - Direct links to official PDF schedules when available.
+- 📤 **Schedule Sharing** - Generate compact localized day or week messages ready to forward in Telegram.
 
 ## 🛠️ Tech Stack & Data Sources
 - **Framework:** [aiogram 3.x](https://docs.aiogram.dev/) (Asynchronous Telegram Bot API)
