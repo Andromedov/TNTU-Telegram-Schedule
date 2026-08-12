@@ -54,6 +54,13 @@ async def add_or_update_user(user_id: int, group_name: str = None):
             await db.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
         await db.commit()
 
+
+async def clear_user_group(user_id: int):
+    """Очищає групу наявного користувача, не змінюючи його налаштування."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET group_name = NULL WHERE user_id = ?", (user_id,))
+        await db.commit()
+
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

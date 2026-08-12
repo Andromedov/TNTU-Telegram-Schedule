@@ -10,6 +10,25 @@ from datetime import datetime, timedelta
 from messages import get_msg
 
 
+GROUP_CHECK_CONCURRENCY = 8
+GROUP_CHECK_FAILED = "CHECK_FAILED"
+
+
+def _next_group_candidate(group_name: str) -> str | None:
+    """Збільшує цифру курсу, зберігаючи номер підгрупи: СТс-21 -> СТс-31."""
+    match = re.fullmatch(r"([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)", group_name)
+    if not match:
+        return None
+
+    prefix, number, suffix = match.groups()
+    course = int(number[0])
+    if course < 1 or course >= 6:
+        return "GRADUATED"
+
+    next_number = f"{course + 1}{number[1:]}"
+    return f"{prefix}{next_number}{suffix}"
+
+
 def _get_dismiss_keyboard() -> InlineKeyboardMarkup:
     """Генерує клавіатуру з однією кнопкою для видалення повідомлення."""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -66,33 +85,43 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
     group_mapping = {}
     candidates = {}
 
-    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)$")
-
     for group in unique_groups:
-        match = pattern.match(group)
-        if match:
-            prefix = match.group(1)
-            year = int(match.group(2))
-            suffix = match.group(3)
+        candidate = _next_group_candidate(group)
+        if candidate == "GRADUATED":
+            group_mapping[group] = "GRADUATED"
+        elif candidate:
+            candidates[group] = candidate
 
-            new_year = year + 1
-            if new_year > 6:
-                group_mapping[group] = "GRADUATED"
-            else:
-                candidates[group] = f"{prefix}{new_year}{suffix}"
+    semaphore = asyncio.Semaphore(GROUP_CHECK_CONCURRENCY)
+
+    async def check_group(g_name: str) -> bool | None:
+        async with semaphore:
+            for attempt in range(3):
+                result = await scraper.check_group_exists_status(g_name)
+                if result is not None:
+                    return result
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+            return None
 
     async def find_valid_group(g_name: str) -> str | None:
         """Перевіряє, чи існує група, якщо ні — пробує підігнати регістр (СТС-31 -> СТс-31)."""
-        if await scraper.check_group_exists(g_name):
+        exists = await check_group(g_name)
+        if exists is True:
             return g_name
+        if exists is None:
+            return GROUP_CHECK_FAILED
 
         if "-" in g_name:
             parts = g_name.split("-")
             if len(parts[0]) > 1 and parts[0][-1].isalpha():
                 alt_prefix = parts[0][:-1] + parts[0][-1].lower()
                 alt_g = f"{alt_prefix}-{'-'.join(parts[1:])}"
-                if await scraper.check_group_exists(alt_g):
+                alt_exists = await check_group(alt_g)
+                if alt_exists is True:
                     return alt_g
+                if alt_exists is None:
+                    return GROUP_CHECK_FAILED
         return None
 
     if candidates:
@@ -119,7 +148,12 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
             if old_group in group_mapping:
                 new_group = group_mapping[old_group]
 
+                if new_group == GROUP_CHECK_FAILED:
+                    logging.warning(f"Пропущено переведення групи {old_group}: не вдалося перевірити сайт")
+                    continue
                 if new_group == "GRADUATED":
+                    await db.clear_user_group(user['user_id'])
+                    graduated_count += 1
                     try:
                         await bot.send_message(
                             user['user_id'],
@@ -129,10 +163,8 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                             parse_mode="HTML",
                             reply_markup=_get_dismiss_keyboard()
                         )
-                        await db.add_or_update_user(user['user_id'], None)
-                        graduated_count += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.warning(f"Не вдалося повідомити випускника {user['user_id']}: {e}")
                 else:
                     await db.add_or_update_user(user['user_id'], new_group)
                     try:

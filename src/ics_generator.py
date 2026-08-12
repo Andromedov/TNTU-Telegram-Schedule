@@ -4,6 +4,40 @@ import logging
 import uuid
 
 
+def _escape_text(value: str) -> str:
+    """Екранує значення типу TEXT відповідно до RFC 5545."""
+    return (str(value)
+            .replace('\\', '\\\\')
+            .replace('\r\n', '\\n')
+            .replace('\n', '\\n')
+            .replace('\r', '\\n')
+            .replace(';', '\\;')
+            .replace(',', '\\,'))
+
+
+def _fold_line(line: str) -> list[str]:
+    """Складає content line по 75 UTF-8 октетів без розриву Unicode-символів."""
+    folded = []
+    remaining = line
+    byte_limit = 75
+
+    while len(remaining.encode('utf-8')) > byte_limit:
+        byte_count = 0
+        split_at = 0
+        for index, char in enumerate(remaining):
+            char_size = len(char.encode('utf-8'))
+            if byte_count + char_size > byte_limit:
+                break
+            byte_count += char_size
+            split_at = index + 1
+        folded.append(remaining[:split_at])
+        remaining = " " + remaining[split_at:]
+        byte_limit = 75
+
+    folded.append(remaining)
+    return folded
+
+
 def generate_week_ics(group_name: str, schedule_data: dict) -> str:
     """
     Ручний генератор .ics файлу для розкладу на тиждень (без сторонніх бібліотек).
@@ -28,7 +62,7 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 continue
 
             time_str = item.get('time', '')
-            name = item.get('name', 'Пара').replace('\n', ' ').replace('\r', '')
+            name = _escape_text(item.get('name', 'Пара'))
 
             parts = time_str.split('-')
             try:
@@ -61,7 +95,8 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 lines.append(f"DTEND:{end_utc}")
                 lines.append("SUMMARY:" + name)
                 lines.append("LOCATION:ТНТУ")
-                lines.append(f"DESCRIPTION:Група: {group_name}\\nЗгенеровано ботом @tntu_schedule_bot")
+                description = _escape_text(f"Група: {group_name}\nЗгенеровано ботом @tntu_schedule_bot")
+                lines.append(f"DESCRIPTION:{description}")
                 lines.append("END:VEVENT")
 
             except Exception as e:
@@ -69,4 +104,5 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 continue
 
     lines.append("END:VCALENDAR")
-    return "\r\n".join(lines) + "\r\n"
+    folded_lines = [part for line in lines for part in _fold_line(line)]
+    return "\r\n".join(folded_lines) + "\r\n"
