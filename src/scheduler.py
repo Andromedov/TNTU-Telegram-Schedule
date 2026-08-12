@@ -1,3 +1,4 @@
+import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,6 +8,25 @@ import logging
 import re
 from datetime import datetime, timedelta
 from messages import get_msg
+
+
+GROUP_CHECK_CONCURRENCY = 8
+GROUP_CHECK_FAILED = "CHECK_FAILED"
+
+
+def _next_group_candidate(group_name: str) -> str | None:
+    """Збільшує цифру курсу, зберігаючи номер підгрупи: СТс-21 -> СТс-31."""
+    match = re.fullmatch(r"([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)", group_name)
+    if not match:
+        return None
+
+    prefix, number, suffix = match.groups()
+    course = int(number[0])
+    if course < 1 or course >= 6:
+        return "GRADUATED"
+
+    next_number = f"{course + 1}{number[1:]}"
+    return f"{prefix}{next_number}{suffix}"
 
 
 def _get_dismiss_keyboard() -> InlineKeyboardMarkup:
@@ -48,6 +68,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
 
     group_counts = {}
 
+    # Крок 1: Збираємо всі групи та кількість користувачів батчами
     limit = 500
     offset = 0
     while True:
@@ -62,29 +83,53 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
 
     unique_groups = set(group_counts.keys())
     group_mapping = {}
-
-    pattern = re.compile(r"^([А-ЯІЇЄA-Zа-яіїєa-z]+-?)(\d{1,2})(.*)$")
+    candidates = {}
 
     for group in unique_groups:
-        match = pattern.match(group)
-        if match:
-            prefix = match.group(1)
-            year = int(match.group(2))
-            suffix = match.group(3)
+        candidate = _next_group_candidate(group)
+        if candidate == "GRADUATED":
+            group_mapping[group] = "GRADUATED"
+        elif candidate:
+            candidates[group] = candidate
 
-            new_year = year + 1
-            if new_year > 6:
-                group_mapping[group] = "GRADUATED"
-                continue
+    semaphore = asyncio.Semaphore(GROUP_CHECK_CONCURRENCY)
 
-            new_group = f"{prefix}{new_year}{suffix}"
+    async def check_group(g_name: str) -> bool | None:
+        async with semaphore:
+            for attempt in range(3):
+                result = await scraper.check_group_exists_status(g_name)
+                if result is not None:
+                    return result
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+            return None
 
-            exists = await scraper.check_group_exists(new_group)
-            if exists:
-                group_mapping[group] = new_group
-            else:
-                # Якщо нова група не знайдена (напр. бакалаври 4 курс -> 5 курс), вважаємо випускниками
-                group_mapping[group] = "GRADUATED"
+    async def find_valid_group(g_name: str) -> str | None:
+        """Перевіряє, чи існує група, якщо ні — пробує підігнати регістр (СТС-31 -> СТс-31)."""
+        exists = await check_group(g_name)
+        if exists is True:
+            return g_name
+        if exists is None:
+            return GROUP_CHECK_FAILED
+
+        if "-" in g_name:
+            parts = g_name.split("-")
+            if len(parts[0]) > 1 and parts[0][-1].isalpha():
+                alt_prefix = parts[0][:-1] + parts[0][-1].lower()
+                alt_g = f"{alt_prefix}-{'-'.join(parts[1:])}"
+                alt_exists = await check_group(alt_g)
+                if alt_exists is True:
+                    return alt_g
+                if alt_exists is None:
+                    return GROUP_CHECK_FAILED
+        return None
+
+    if candidates:
+        exist_results = await asyncio.gather(
+            *[find_valid_group(new_g) for new_g in candidates.values()]
+        )
+        for old_g, valid_new_g in zip(candidates.keys(), exist_results):
+            group_mapping[old_g] = valid_new_g if valid_new_g else "GRADUATED"
 
     if dry_run:
         for group, new_g in group_mapping.items():
@@ -103,7 +148,12 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
             if old_group in group_mapping:
                 new_group = group_mapping[old_group]
 
+                if new_group == GROUP_CHECK_FAILED:
+                    logging.warning(f"Пропущено переведення групи {old_group}: не вдалося перевірити сайт")
+                    continue
                 if new_group == "GRADUATED":
+                    await db.clear_user_group(user['user_id'])
+                    graduated_count += 1
                     try:
                         await bot.send_message(
                             user['user_id'],
@@ -113,10 +163,8 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                             parse_mode="HTML",
                             reply_markup=_get_dismiss_keyboard()
                         )
-                        await db.add_or_update_user(user['user_id'], None)
-                        graduated_count += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.warning(f"Не вдалося повідомити випускника {user['user_id']}: {e}")
                 else:
                     await db.add_or_update_user(user['user_id'], new_group)
                     try:
@@ -234,13 +282,14 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     tasks = {}
 
     for user in users:
-        g = user['group_name']
-        if g and user['notify_10_min']:
-            offset = user.get('reminder_offset', 10)
+        user_dict = dict(user)
+        g = user_dict['group_name']
+        if g and user_dict.get('notify_10_min', 1):
+            offset = user_dict.get('reminder_offset', 10)
             key = (g, offset)
             if key not in tasks:
                 tasks[key] = []
-            tasks[key].append(user['user_id'])
+            tasks[key].append(user_dict['user_id'])
 
     for (group_name, offset), user_ids in tasks.items():
         schedule = await scraper.parse_schedule_for_today(group_name)

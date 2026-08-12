@@ -121,7 +121,11 @@ def _write_hashes_sync(hashes: dict):
 #      МЕРЕЖЕВИЙ РІВЕНЬ (Отримання HTML)
 # ==========================================
 
-async def fetch_schedule_html(group_name: str) -> Optional[str]:
+class ScheduleLookupError(RuntimeError):
+    """Сайт розкладу не дав жодної успішної відповіді."""
+
+
+async def fetch_schedule_html(group_name: str, *, raise_on_network_error: bool = False) -> Optional[str]:
     """Асинхронно завантажує сторінку розкладу."""
     clean_group = sanitize_group(group_name)
     clean_group_no_hyphen = clean_group.upper().replace('-', '')
@@ -133,12 +137,14 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
             return cached_data['html']
 
     html_result = None
+    successful_responses = 0
 
     try:
         async with aiohttp.ClientSession() as session:
             # POST запит
             async with session.post(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}, data={'group': group_name}) as resp:
                 if resp.status == 200:
+                    successful_responses += 1
                     html = await resp.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     if _is_valid_schedule_page(soup, clean_group_no_hyphen):
@@ -150,6 +156,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
                 async with session.get(TNTU_SCHEDULE_URL,
                                        params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
                     if resp.status == 200:
+                        successful_responses += 1
                         html = await resp.text()
                         soup = BeautifulSoup(html, 'html.parser')
                         if _is_valid_schedule_page(soup, clean_group_no_hyphen):
@@ -159,6 +166,7 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
             if not html_result:
                 async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
                     if resp.status == 200:
+                        successful_responses += 1
                         html = await resp.text()
                         soup = BeautifulSoup(html, 'html.parser')
                         for a_tag in soup.find_all('a', href=True):
@@ -179,10 +187,15 @@ async def fetch_schedule_html(group_name: str) -> Optional[str]:
             if html_result:
                 _html_cache[clean_group] = {'html': html_result, 'timestamp': now}
 
+            if not html_result and raise_on_network_error and successful_responses == 0:
+                raise ScheduleLookupError(f"Сайт розкладу недоступний для перевірки групи {group_name}")
+
             return html_result
 
     except Exception as e:
         logging.error(f"Помилка скрейпінгу: {e}")
+        if raise_on_network_error:
+            raise ScheduleLookupError(f"Не вдалося перевірити групу {group_name}") from e
         return None
 
 
@@ -325,6 +338,17 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
 async def check_group_exists(group_name: str) -> bool:
     """Перевіряє, чи існує група на сайті ТНТУ."""
     html = await fetch_schedule_html(group_name)
+    group_exists, _, _, _ = _parse_core_data(html, group_name)
+    return group_exists
+
+
+async def check_group_exists_status(group_name: str) -> Optional[bool]:
+    """Повертає True/False для наявної/відсутньої групи та None при помилці сайту."""
+    try:
+        html = await fetch_schedule_html(group_name, raise_on_network_error=True)
+    except ScheduleLookupError:
+        return None
+
     group_exists, _, _, _ = _parse_core_data(html, group_name)
     return group_exists
 
