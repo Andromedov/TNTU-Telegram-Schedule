@@ -3,6 +3,7 @@ import logging
 
 from aiogram import Bot, Dispatcher, Router
 
+from bot.middleware import UserActivityMiddleware
 from bot.router import ScheduleBotHandlers
 from config import BOT_TOKEN
 from i18n.messages import get_msg
@@ -19,6 +20,7 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
+    dp.update.outer_middleware(UserActivityMiddleware())
     scheduler = None
 
     try:

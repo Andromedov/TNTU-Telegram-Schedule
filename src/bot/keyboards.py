@@ -426,11 +426,47 @@ class KeyboardMixin:
     def get_admin_keyboard() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+                [InlineKeyboardButton(text="📊 Огляд", callback_data="admin_stats")],
+                [InlineKeyboardButton(text="👥 Користувачі", callback_data="admin_users")],
+                [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="admin_notifications")],
+                [InlineKeyboardButton(text="🩺 Стан системи", callback_data="admin_system")],
+                [InlineKeyboardButton(text="🗑 Видалити дані", callback_data="admin_delete_user")],
+                [InlineKeyboardButton(text="🧪 Тестові дії", callback_data="admin_tests")],
+                [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_delete_user_keyboard(user_id: int) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🗑 Підтвердити видалення",
+                        callback_data=f"admin_confirm_delete:{user_id}",
+                    )
+                ],
+                [InlineKeyboardButton(text="↩️ Скасувати", callback_data="admin_home")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_section_keyboard(refresh_callback: str) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data=refresh_callback)],
+                [InlineKeyboardButton(text="🔙 Адмін-панель", callback_data="admin_home")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_tests_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
                 [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
                 [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
                 [InlineKeyboardButton(text="🧪 Тест: Нагадування", callback_data="admin_test_reminder")],
                 [InlineKeyboardButton(text="🧪 Dry-run: Переведення груп", callback_data="admin_test_promote")],
-                [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")],
+                [InlineKeyboardButton(text="🔙 Адмін-панель", callback_data="admin_home")],
             ]
         )

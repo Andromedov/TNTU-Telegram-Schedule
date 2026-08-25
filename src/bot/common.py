@@ -30,3 +30,7 @@ def user_language(user_data, telegram_language: str | None = None) -> str:
 
 class UserState(StatesGroup):
     waiting_for_group = State()
+
+
+class AdminState(StatesGroup):
+    waiting_for_user_identifier = State()
