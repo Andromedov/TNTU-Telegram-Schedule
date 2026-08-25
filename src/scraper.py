@@ -67,14 +67,13 @@ def _extract_text(element: Tag) -> str:
 
 def _is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
     """Перевіряє, чи містить сторінка розклад для цільової групи (допоміжна функція)."""
-    if isinstance(soup.find('table', attrs={'id': 'ScheduleWeek'}), Tag):
-        return True
-
+    has_target_heading = False
     for h2 in soup.find_all('h2'):
         if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(_extract_text(h2)).upper().replace('-', ''):
-            return True
+            has_target_heading = True
+            break
 
-    return False
+    return has_target_heading and isinstance(soup.find('table', attrs={'id': 'ScheduleWeek'}), Tag)
 
 
 def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:

@@ -20,6 +20,14 @@ FIXTURE = (ROOT / "tests" / "fixtures" / "schedule_week.html").read_text(encodin
 
 
 class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
+    def test_builds_real_group_slug_and_rejects_another_groups_table(self):
+        group = chr(0x421) + chr(0x422) + "-11"
+        self.assertEqual("st11", scraper._transliterate_for_url(group))
+
+        soup = BeautifulSoup(FIXTURE, "html.parser")
+        self.assertTrue(scraper._is_valid_schedule_page(soup, "ТЕСТОВА ГРУПА"))
+        self.assertFalse(scraper._is_valid_schedule_page(soup, "ІНША ГРУПА"))
+
     def test_extracts_structured_lesson_details(self):
         soup = BeautifulSoup(FIXTURE, "html.parser")
         table = soup.find("table", id="ScheduleWeek")
