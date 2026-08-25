@@ -41,6 +41,7 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(user["quiet_hours_end"])
                 self.assertIsNone(user["created_at"])
                 self.assertIsNone(user["last_seen_at"])
+                self.assertIsNone(user["username"])
             finally:
                 database.DB_PATH = original_path
 
@@ -72,14 +73,38 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
             seen_at = datetime(2026, 8, 21, 9, 30, tzinfo=timezone.utc)
             try:
                 await database.init_db()
-                await database.record_user_activity(7, "en", created_at)
+                await database.record_user_activity(7, "en", created_at, username="First_User")
                 await database.update_setting(7, "language", "uk")
-                await database.record_user_activity(7, "en", seen_at)
+                await database.record_user_activity(7, "en", seen_at, username="Current_User")
 
                 user = await database.get_user(7)
                 self.assertEqual("uk", user["language"])
+                self.assertEqual("Current_User", user["username"])
                 self.assertEqual(created_at.isoformat(timespec="seconds"), user["created_at"])
                 self.assertEqual(seen_at.isoformat(timespec="seconds"), user["last_seen_at"])
+            finally:
+                database.DB_PATH = original_path
+
+    async def test_username_lookup_tracks_current_owner_and_deletion_removes_everything(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_path = database.DB_PATH
+            database.DB_PATH = str(Path(temp_dir) / "users.sqlite3")
+            try:
+                await database.init_db()
+                await database.record_user_activity(7, username="Exchange_Student")
+                await database.add_or_update_user(7, "КН-21")
+
+                found = await database.get_user_by_username("@exchange_student")
+                self.assertEqual(7, found["user_id"])
+
+                await database.record_user_activity(8, username="EXCHANGE_STUDENT")
+                self.assertIsNone((await database.get_user(7))["username"])
+                self.assertEqual(8, (await database.get_user_by_username("@exchange_student"))["user_id"])
+
+                self.assertTrue(await database.delete_user_data(8))
+                self.assertIsNone(await database.get_user(8))
+                self.assertIsNone(await database.get_user_by_username("@exchange_student"))
+                self.assertFalse(await database.delete_user_data(8))
             finally:
                 database.DB_PATH = original_path
 

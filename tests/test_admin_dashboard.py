@@ -6,13 +6,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
+from aiogram.fsm.storage.memory import MemoryStorage
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
 from bot import admin  # noqa: E402
+from bot.common import AdminState, ics_cooldown  # noqa: E402
 from bot.keyboards import KeyboardMixin  # noqa: E402
 from bot.middleware import UserActivityMiddleware  # noqa: E402
+from bot.privacy import erase_user_data  # noqa: E402
 from jobs.monitoring import JobMonitor, job_monitor  # noqa: E402
 
 
@@ -27,6 +33,8 @@ def make_callback(user_id: int = 1):
         from_user=SimpleNamespace(id=user_id),
         message=SimpleNamespace(edit_text=AsyncMock()),
         answer=AsyncMock(),
+        data="",
+        bot=SimpleNamespace(id=100),
     )
 
 
@@ -139,8 +147,55 @@ class AdminDashboardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("admin_system", main_callbacks)
         self.assertIn("admin_tests", main_callbacks)
+        self.assertIn("admin_delete_user", main_callbacks)
         self.assertNotIn("admin_test_evening", main_callbacks)
         self.assertIn("admin_test_evening", test_callbacks)
+
+    async def test_admin_can_find_user_by_username_before_confirmation(self):
+        handlers = DashboardHandlers()
+        storage = MemoryStorage()
+        state = FSMContext(storage=storage, key=StorageKey(bot_id=100, chat_id=1, user_id=1))
+        await state.set_state(AdminState.waiting_for_user_identifier)
+        message = SimpleNamespace(
+            from_user=SimpleNamespace(id=1),
+            text="@exchange_student",
+            delete=AsyncMock(),
+            answer=AsyncMock(),
+        )
+        user = {"user_id": 42, "username": "Exchange_Student", "group_name": "КН-21"}
+
+        with (
+            patch.object(admin, "SENIOR_ID", 1),
+            patch.object(admin.db, "get_user_by_username", new=AsyncMock(return_value=user)),
+        ):
+            await handlers.process_admin_user_identifier(message, state)
+
+        self.assertIsNone(await state.get_state())
+        confirmation = message.answer.await_args
+        self.assertIn("<code>42</code>", confirmation.args[0])
+        self.assertEqual(
+            "admin_confirm_delete:42",
+            confirmation.kwargs["reply_markup"].inline_keyboard[0][0].callback_data,
+        )
+
+    async def test_admin_confirmation_clears_target_state_and_erases_user_data(self):
+        handlers = DashboardHandlers()
+        storage = MemoryStorage()
+        admin_state = FSMContext(storage=storage, key=StorageKey(bot_id=100, chat_id=1, user_id=1))
+        target_state = FSMContext(storage=storage, key=StorageKey(bot_id=100, chat_id=42, user_id=42))
+        await target_state.set_state("test:pending")
+        callback = make_callback()
+        callback.data = "admin_confirm_delete:42"
+
+        with (
+            patch.object(admin, "SENIOR_ID", 1),
+            patch.object(admin, "erase_user_data", new=AsyncMock(return_value=True)) as erase,
+        ):
+            await handlers.process_admin_confirm_delete(callback, admin_state)
+
+        erase.assert_awaited_once_with(42, handlers.scheduler)
+        self.assertIsNone(await target_state.get_state())
+        self.assertIn("видалено", callback.message.edit_text.await_args.args[0])
 
 
 class ActivityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
@@ -148,19 +203,19 @@ class ActivityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         middleware = UserActivityMiddleware()
         handler = AsyncMock(return_value="handled")
         event = SimpleNamespace()
-        data = {"event_from_user": SimpleNamespace(id=42, language_code="en-US")}
+        data = {"event_from_user": SimpleNamespace(id=42, language_code="en-US", username="Exchange_Student")}
 
         with patch("bot.middleware.db.record_user_activity", new=AsyncMock()) as record_activity:
             result = await middleware(handler, event, data)
 
         self.assertEqual("handled", result)
-        record_activity.assert_awaited_once_with(42, "en")
+        record_activity.assert_awaited_once_with(42, "en", username="Exchange_Student")
         handler.assert_awaited_once_with(event, data)
 
     async def test_tracking_failure_does_not_block_update(self):
         middleware = UserActivityMiddleware()
         handler = AsyncMock(return_value="handled")
-        data = {"event_from_user": SimpleNamespace(id=42, language_code="uk")}
+        data = {"event_from_user": SimpleNamespace(id=42, language_code="uk", username=None)}
 
         with patch(
             "bot.middleware.db.record_user_activity",
@@ -170,6 +225,29 @@ class ActivityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("handled", result)
         handler.assert_awaited_once()
+
+
+class PrivacyCleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_erasure_removes_database_cache_and_pending_user_jobs(self):
+        jobs = [
+            SimpleNamespace(id="class-reminder:42:КН-21:one"),
+            SimpleNamespace(id="snooze:42:99"),
+            SimpleNamespace(id="class-reminder:7:КН-21:other"),
+        ]
+        removed_ids = []
+        scheduler = SimpleNamespace(
+            get_jobs=lambda: jobs,
+            remove_job=lambda job_id: removed_ids.append(job_id),
+        )
+        ics_cooldown[42] = datetime.now(timezone.utc)
+
+        with patch("bot.privacy.db.delete_user_data", new=AsyncMock(return_value=True)) as delete:
+            deleted = await erase_user_data(42, scheduler)
+
+        self.assertTrue(deleted)
+        delete.assert_awaited_once_with(42)
+        self.assertNotIn(42, ics_cooldown)
+        self.assertEqual(["class-reminder:42:КН-21:one", "snooze:42:99"], removed_ids)
 
 
 class JobMonitorTests(unittest.TestCase):
