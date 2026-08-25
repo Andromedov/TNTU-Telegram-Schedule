@@ -20,7 +20,12 @@ from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
 from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
 from schedule_formatting import lesson_html
-from reminder_utils import kyiv_now, muted_until_tomorrow, temporary_notifications_are_muted
+from reminder_utils import (
+    REMINDER_LESSON_TYPES,
+    kyiv_now,
+    muted_until_tomorrow,
+    temporary_notifications_are_muted,
+)
 from campus import BUILDINGS, CAMPUS_MAP_URL, building_card, schedule_buildings
 
 # ==========================================
@@ -162,6 +167,11 @@ class ScheduleBotHandlers:
         first_offset = user_dict.get('first_class_reminder_offset')
         digest_enabled = user_dict.get('morning_digest', 0)
         digest_hour = int(user_dict.get('morning_digest_hour') or 7)
+        quiet_start = user_dict.get('quiet_hours_start')
+        quiet_end = user_dict.get('quiet_hours_end')
+        enabled_types = sum(
+            bool(user_dict.get(setting, 1)) for setting in REMINDER_LESSON_TYPES.values()
+        )
 
         if not notify_enabled:
             remind_text = get_msg("settings.reminder_off", language=language)
@@ -189,11 +199,28 @@ class ScheduleBotHandlers:
         )
         mute_callback = "settings_unmute_today" if temporary_notifications_are_muted(user_dict) \
             else "settings_mute_today"
+        if enabled_types == len(REMINDER_LESSON_TYPES):
+            lesson_types_text = get_msg("settings.lesson_types_all", language=language)
+        elif enabled_types == 0:
+            lesson_types_text = get_msg("settings.lesson_types_none", language=language)
+        else:
+            lesson_types_text = get_msg(
+                "settings.lesson_types_selected", language=language,
+                enabled=enabled_types, total=len(REMINDER_LESSON_TYPES),
+            )
+        quiet_text = get_msg(
+            "settings.quiet_hours_range" if quiet_start is not None and quiet_end is not None
+            else "settings.quiet_hours_off",
+            language=language,
+            start=f"{int(quiet_start or 0):02d}", end=f"{int(quiet_end or 0):02d}",
+        )
 
         kb = [
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
             [InlineKeyboardButton(text=first_remind_text, callback_data="settings_first_reminder")],
+            [InlineKeyboardButton(text=lesson_types_text, callback_data="settings_lesson_types")],
             [InlineKeyboardButton(text=digest_text, callback_data="settings_digest")],
+            [InlineKeyboardButton(text=quiet_text, callback_data="settings_quiet_hours")],
             [InlineKeyboardButton(text=mute_text, callback_data=mute_callback)],
             [InlineKeyboardButton(
                 text=f"{'✅' if user_dict.get('notify_evening', 1) else '❌'} {get_msg('keyboard.evening', language=language)}",
@@ -255,6 +282,66 @@ class ScheduleBotHandlers:
             [InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")],
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_lesson_type_settings_keyboard(user_data, language: str = "uk") -> InlineKeyboardMarkup:
+        user_dict = dict(user_data)
+        rows = []
+        for category, setting in REMINDER_LESSON_TYPES.items():
+            enabled = bool(user_dict.get(setting, 1))
+            label = get_msg(f"settings.lesson_type_{category}", language=language)
+            rows.append([InlineKeyboardButton(
+                text=f"{'✅' if enabled else '❌'} {label}",
+                callback_data=f"toggle_reminder_type:{category}",
+            )])
+        rows.append([InlineKeyboardButton(
+            text=get_msg("calendar.back", language=language), callback_data="show_settings"
+        )])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    @staticmethod
+    def get_quiet_hours_keyboard(user_data, language: str = "uk") -> InlineKeyboardMarkup:
+        user_dict = dict(user_data)
+        start = user_dict.get("quiet_hours_start")
+        end = user_dict.get("quiet_hours_end")
+        enabled = start is not None and end is not None
+        start = int(start) if start is not None else 22
+        end = int(end) if end is not None else 7
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=get_msg(
+                    "settings.quiet_disable" if enabled else "settings.quiet_enable",
+                    language=language,
+                ),
+                callback_data="toggle_quiet_hours",
+            )],
+            [InlineKeyboardButton(
+                text=get_msg("settings.quiet_start", language=language, hour=f"{start:02d}"),
+                callback_data="choose_quiet_hour:start",
+            )],
+            [InlineKeyboardButton(
+                text=get_msg("settings.quiet_end", language=language, hour=f"{end:02d}"),
+                callback_data="choose_quiet_hour:end",
+            )],
+            [InlineKeyboardButton(
+                text=get_msg("calendar.back", language=language), callback_data="show_settings"
+            )],
+        ])
+
+    @staticmethod
+    def get_quiet_hour_keyboard(boundary: str, language: str = "uk") -> InlineKeyboardMarkup:
+        rows = []
+        buttons = [
+            InlineKeyboardButton(
+                text=f"{hour:02d}:00", callback_data=f"set_quiet_hour:{boundary}:{hour}"
+            )
+            for hour in range(24)
+        ]
+        rows.extend(buttons[index:index + 4] for index in range(0, len(buttons), 4))
+        rows.append([InlineKeyboardButton(
+            text=get_msg("calendar.back", language=language), callback_data="settings_quiet_hours"
+        )])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
 
     @staticmethod
     def get_schedule_nav_keyboard(offset: int, extra_buttons: list = None, language: str = "uk") -> InlineKeyboardMarkup:
@@ -917,6 +1004,104 @@ class ScheduleBotHandlers:
         )
         await callback.answer()
 
+    async def process_settings_lesson_types(self, callback: CallbackQuery):
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_lesson_types", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_lesson_type_settings_keyboard(user, language),
+        )
+        await callback.answer()
+
+    async def process_toggle_reminder_type(self, callback: CallbackQuery):
+        category = callback.data.split(":", 1)[1]
+        setting = REMINDER_LESSON_TYPES.get(category)
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        if setting is None or user is None:
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+
+        await db.update_setting(callback.from_user.id, setting, 0 if user[setting] else 1)
+        updated_user = await db.get_user(callback.from_user.id)
+        await callback.message.edit_reply_markup(
+            reply_markup=self.get_lesson_type_settings_keyboard(updated_user, language)
+        )
+        await callback.answer(get_msg("settings.saved", language=language))
+
+    async def process_settings_quiet_hours(self, callback: CallbackQuery):
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_quiet_hours", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_quiet_hours_keyboard(user, language),
+        )
+        await callback.answer()
+
+    async def process_toggle_quiet_hours(self, callback: CallbackQuery):
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        if user is None:
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        enabled = user["quiet_hours_start"] is not None and user["quiet_hours_end"] is not None
+        await db.update_setting(callback.from_user.id, "quiet_hours_start", None if enabled else 22)
+        await db.update_setting(callback.from_user.id, "quiet_hours_end", None if enabled else 7)
+        updated_user = await db.get_user(callback.from_user.id)
+        await callback.message.edit_reply_markup(
+            reply_markup=self.get_quiet_hours_keyboard(updated_user, language)
+        )
+        await callback.answer(get_msg("settings.saved", language=language))
+
+    async def process_choose_quiet_hour(self, callback: CallbackQuery):
+        boundary = callback.data.split(":", 1)[1]
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        if boundary not in {"start", "end"}:
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        await callback.message.edit_text(
+            get_msg(f"settings.choose_quiet_{boundary}", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_quiet_hour_keyboard(boundary, language),
+        )
+        await callback.answer()
+
+    async def process_set_quiet_hour(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        try:
+            _, boundary, raw_hour = callback.data.split(":")
+            hour = int(raw_hour)
+        except (ValueError, TypeError):
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        if boundary not in {"start", "end"} or not 0 <= hour <= 23:
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+
+        user = await db.get_user(callback.from_user.id)
+        other_boundary = "end" if boundary == "start" else "start"
+        other_value = user[f"quiet_hours_{other_boundary}"] if user is not None else None
+        default_other = 7 if boundary == "start" else 22
+        comparison_hour = int(other_value) if other_value is not None else default_other
+        if comparison_hour == hour:
+            await callback.answer(get_msg("settings.quiet_same_hour", language=language), show_alert=True)
+            return
+
+        await db.update_setting(callback.from_user.id, f"quiet_hours_{boundary}", hour)
+        if other_value is None:
+            await db.update_setting(
+                callback.from_user.id, f"quiet_hours_{other_boundary}", default_other
+            )
+        updated_user = await db.get_user(callback.from_user.id)
+        await callback.message.edit_text(
+            get_msg("settings.choose_quiet_hours", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_quiet_hours_keyboard(updated_user, language),
+        )
+        await callback.answer(get_msg("settings.saved", language=language))
+
     async def process_set_digest(self, callback: CallbackQuery):
         raw_value = callback.data.split(":", 1)[1]
         if raw_value not in {"off", "6", "7", "8", "9"}:
@@ -1188,6 +1373,22 @@ class ScheduleBotHandlers:
             self.process_settings_first_reminder, F.data == "settings_first_reminder"
         )
         self.router.callback_query.register(self.process_set_first_remind, F.data.startswith("set_first_remind:"))
+        self.router.callback_query.register(
+            self.process_settings_lesson_types, F.data == "settings_lesson_types"
+        )
+        self.router.callback_query.register(
+            self.process_toggle_reminder_type, F.data.startswith("toggle_reminder_type:")
+        )
+        self.router.callback_query.register(
+            self.process_settings_quiet_hours, F.data == "settings_quiet_hours"
+        )
+        self.router.callback_query.register(self.process_toggle_quiet_hours, F.data == "toggle_quiet_hours")
+        self.router.callback_query.register(
+            self.process_choose_quiet_hour, F.data.startswith("choose_quiet_hour:")
+        )
+        self.router.callback_query.register(
+            self.process_set_quiet_hour, F.data.startswith("set_quiet_hour:")
+        )
         self.router.callback_query.register(self.process_settings_digest, F.data == "settings_digest")
         self.router.callback_query.register(self.process_set_digest, F.data.startswith("set_digest:"))
         self.router.callback_query.register(self.process_settings_mute_today, F.data == "settings_mute_today")
