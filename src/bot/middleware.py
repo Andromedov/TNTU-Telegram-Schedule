@@ -24,6 +24,7 @@ class UserActivityMiddleware(BaseMiddleware):
                 await db.record_user_activity(
                     user.id,
                     normalize_language(getattr(user, 'language_code', None)),
+                    username=getattr(user, 'username', None),
                 )
             except Exception as error:
                 logging.warning('Не вдалося оновити активність користувача %s: %s', user.id, error)

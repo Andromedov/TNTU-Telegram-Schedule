@@ -2,9 +2,12 @@ from datetime import datetime, timezone
 from html import escape
 from zoneinfo import ZoneInfo
 
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from bot.common import pdf_cache
+from bot.common import AdminState, pdf_cache
+from bot.privacy import erase_user_data
 from config import APP_VERSION, SENIOR_ID
 from i18n.messages import get_html_msg, get_msg
 from infrastructure import database as db
@@ -199,9 +202,111 @@ class AdminHandlerMixin:
         )
         await callback.answer()
 
-    async def process_admin_home(self, callback: CallbackQuery):
+    async def process_admin_delete_user(self, callback: CallbackQuery, state: FSMContext):
         if not self._is_admin(callback.from_user.id):
             return
+        await state.set_state(AdminState.waiting_for_user_identifier)
+        await callback.message.edit_text(
+            "🗑 <b>Видалення даних користувача</b>\n\n"
+            "Надішліть числовий Telegram ID або останній відомий <code>@username</code>.\n"
+            "Перед видаленням бот покаже знайдений профіль і попросить підтвердження.\n\n"
+            "<i>Username доступний для пошуку лише після взаємодії користувача з цією версією бота. "
+            "Оскільки username може змінитися, перед підтвердженням звірте числовий ID із заявником.</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="↩️ Скасувати", callback_data="admin_home")]]
+            ),
+        )
+        await callback.answer()
+
+    async def process_admin_user_identifier(self, message: Message, state: FSMContext):
+        if not self._is_admin(message.from_user.id):
+            await state.clear()
+            return
+
+        identifier = (message.text or "").strip()
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if identifier.isdecimal():
+            user_id = int(identifier)
+            user = await db.get_user(user_id) if 0 < user_id <= 2**63 - 1 else None
+        elif identifier.startswith("@"):
+            user = await db.get_user_by_username(identifier)
+            user_id = int(user["user_id"]) if user else 0
+        else:
+            user = None
+            user_id = 0
+
+        if user_id == SENIOR_ID:
+            await message.answer(
+                "⚠️ Дані адміністратора не можна видалити через цей інструмент.",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text="↩️ Адмін-панель", callback_data="admin_home")]]
+                ),
+            )
+            return
+
+        if not user:
+            await message.answer(
+                "❌ Користувача не знайдено. Перевірте числовий ID або останній відомий <code>@username</code> "
+                "і спробуйте ще раз.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text="↩️ Скасувати", callback_data="admin_home")]]
+                ),
+            )
+            return
+
+        await state.clear()
+        username = f"@{escape(str(user['username']))}" if user["username"] else "—"
+        group_name = escape(str(user["group_name"])) if user["group_name"] else "—"
+        await message.answer(
+            "⚠️ <b>Підтвердьте безповоротне видалення</b>\n\n"
+            f"ID: <code>{user_id}</code>\n"
+            f"Username: <b>{username}</b>\n"
+            f"Група: <b>{group_name}</b>\n\n"
+            "Буде видалено профіль, налаштування, історію активності та очікувані персональні нагадування.",
+            parse_mode="HTML",
+            reply_markup=self.get_admin_delete_user_keyboard(user_id),
+        )
+
+    async def process_admin_confirm_delete(self, callback: CallbackQuery, state: FSMContext):
+        if not self._is_admin(callback.from_user.id):
+            return
+        try:
+            user_id = int(callback.data.split(":", 1)[1])
+        except (IndexError, TypeError, ValueError):
+            await callback.answer("Некоректний Telegram ID.", show_alert=True)
+            return
+        if user_id <= 0 or user_id > 2**63 - 1 or user_id == SENIOR_ID:
+            await callback.answer("Цього користувача не можна видалити.", show_alert=True)
+            return
+
+        target_state = FSMContext(
+            storage=state.storage,
+            key=StorageKey(bot_id=callback.bot.id, chat_id=user_id, user_id=user_id),
+        )
+        deleted = await erase_user_data(user_id, self.scheduler)
+        await target_state.clear()
+        await callback.message.edit_text(
+            (
+                f"✅ Усі дані користувача <code>{user_id}</code> видалено."
+                if deleted
+                else f"ℹ️ Даних користувача <code>{user_id}</code> вже немає."
+            ),
+            parse_mode="HTML",
+            reply_markup=self.get_admin_keyboard(),
+        )
+        await callback.answer()
+
+    async def process_admin_home(self, callback: CallbackQuery, state: FSMContext | None = None):
+        if not self._is_admin(callback.from_user.id):
+            return
+        if state is not None:
+            await state.clear()
         await callback.message.edit_text(
             "👑 <b>Адмін Панель</b>\nОберіть розділ нижче:",
             parse_mode="HTML",

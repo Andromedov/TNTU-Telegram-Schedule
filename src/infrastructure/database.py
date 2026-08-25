@@ -8,6 +8,7 @@ import aiosqlite
 from config import DB_PATH
 
 EXPECTED_COLUMNS = {
+    'username': 'TEXT',
     'group_name': 'TEXT',
     'notify_10_min': 'BOOLEAN DEFAULT 1',
     'reminder_offset': 'INTEGER DEFAULT 10',
@@ -56,6 +57,8 @@ async def init_db():
                 except Exception as e:
                     logging.error(f"Помилка створення колонки {col_name}: {e}")
 
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)")
+
         await db.commit()
 
 
@@ -82,17 +85,27 @@ async def record_user_activity(
     user_id: int,
     language: str = 'uk',
     occurred_at: datetime | None = None,
+    username: str | None = None,
 ):
-    """Record a Telegram interaction without overwriting the user's saved preferences."""
+    """Record an interaction and the user's latest public Telegram username."""
     timestamp = (occurred_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat(timespec='seconds')
+    normalized_username = username.lstrip('@').strip() if username else None
+    normalized_username = normalized_username or None
     async with aiosqlite.connect(DB_PATH) as db:
+        if normalized_username:
+            await db.execute(
+                "UPDATE users SET username = NULL WHERE user_id != ? AND username = ? COLLATE NOCASE",
+                (user_id, normalized_username),
+            )
         await db.execute(
             """
-            INSERT INTO users (user_id, language, created_at, last_seen_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at
+            INSERT INTO users (user_id, username, language, created_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username=excluded.username,
+                last_seen_at=excluded.last_seen_at
             """,
-            (user_id, language, timestamp, timestamp),
+            (user_id, normalized_username, language, timestamp, timestamp),
         )
         await db.commit()
 
@@ -109,6 +122,28 @@ async def get_user(user_id: int):
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
             return await cursor.fetchone()
+
+
+async def get_user_by_username(username: str):
+    """Find a user by their latest known Telegram username, case-insensitively."""
+    normalized_username = username.lstrip('@').strip()
+    if not normalized_username:
+        return None
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM users WHERE username = ? COLLATE NOCASE",
+            (normalized_username,),
+        ) as cursor:
+            return await cursor.fetchone()
+
+
+async def delete_user_data(user_id: int) -> bool:
+    """Permanently delete all persisted data associated with a Telegram user ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def update_setting(user_id: int, setting: str, value: Any):

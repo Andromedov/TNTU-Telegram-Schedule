@@ -10,6 +10,7 @@ from bot.admin import AdminHandlerMixin
 from bot.base import HandlerBaseMixin
 from bot.campus import CampusHandlerMixin
 from bot.common import (
+    AdminState,
     UserState,
     get_pdf_key as _get_pdf_key,
     ics_cooldown as _ics_cooldown,
@@ -48,6 +49,10 @@ class ScheduleBotHandlers(
         self.router.message.register(self.cmd_admin, Command("admin"))
 
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
+        self.router.message.register(
+            self.process_admin_user_identifier,
+            AdminState.waiting_for_user_identifier,
+        )
 
         self.router.callback_query.register(self.process_nav_schedule, F.data.startswith("nav_schedule:"))
         self.router.callback_query.register(self.process_nav_week, F.data.startswith("nav_week:"))
@@ -92,6 +97,11 @@ class ScheduleBotHandlers(
         self.router.callback_query.register(self.process_admin_notifications, F.data == "admin_notifications")
         self.router.callback_query.register(self.process_admin_system, F.data == "admin_system")
         self.router.callback_query.register(self.process_admin_tests, F.data == "admin_tests")
+        self.router.callback_query.register(self.process_admin_delete_user, F.data == "admin_delete_user")
+        self.router.callback_query.register(
+            self.process_admin_confirm_delete,
+            F.data.startswith("admin_confirm_delete:"),
+        )
         self.router.callback_query.register(self.process_admin_home, F.data == "admin_home")
         self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
         self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")

@@ -430,8 +430,23 @@ class KeyboardMixin:
                 [InlineKeyboardButton(text="👥 Користувачі", callback_data="admin_users")],
                 [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="admin_notifications")],
                 [InlineKeyboardButton(text="🩺 Стан системи", callback_data="admin_system")],
+                [InlineKeyboardButton(text="🗑 Видалити дані", callback_data="admin_delete_user")],
                 [InlineKeyboardButton(text="🧪 Тестові дії", callback_data="admin_tests")],
                 [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_delete_user_keyboard(user_id: int) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🗑 Підтвердити видалення",
+                        callback_data=f"admin_confirm_delete:{user_id}",
+                    )
+                ],
+                [InlineKeyboardButton(text="↩️ Скасувати", callback_data="admin_home")],
             ]
         )
 

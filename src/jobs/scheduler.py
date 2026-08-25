@@ -5,6 +5,7 @@ import asyncio
 
 from aiogram import Bot
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from infrastructure import database as db
@@ -40,6 +41,24 @@ from schedule import service as scraper
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
     """Schedule lesson reminders while preserving the facade's clock hook."""
     return await _schedule_daily_reminders(bot, scheduler, now_provider=kyiv_now)
+
+
+def remove_user_jobs(scheduler: AsyncIOScheduler | None, user_id: int) -> int:
+    """Remove pending one-off jobs that can send messages to a specific user."""
+    if scheduler is None:
+        return 0
+
+    prefixes = (f"class-reminder:{user_id}:", f"snooze:{user_id}:")
+    removed = 0
+    for job in scheduler.get_jobs():
+        if job.id.startswith(prefixes):
+            try:
+                scheduler.remove_job(job.id)
+                removed += 1
+            except JobLookupError:
+                # The job may have completed between get_jobs() and remove_job().
+                pass
+    return removed
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
