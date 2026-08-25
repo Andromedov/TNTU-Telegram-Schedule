@@ -88,7 +88,7 @@ def _format_schedule_changes(changes: list, language: str) -> str:
             week=lesson.get('week', '?'),
             time=lesson.get('time', '?'),
         )
-        subject = escape(str(lesson.get('subject') or lesson.get('name') or '?'))
+        subject = lesson_html(lesson)
         key = {
             'added': 'schedule.change_added',
             'removed': 'schedule.change_removed',

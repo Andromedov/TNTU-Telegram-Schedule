@@ -29,6 +29,7 @@ class ScheduleChangeFormattingTests(unittest.TestCase):
             "lesson": {
                 "week": 2, "weekday": 1, "time": "9:30-10:50",
                 "subject": "A < B",
+                "atutor_url": "http://dl.tntu.edu.ua/bounce.php?course=101",
             },
             "fields": {"room": {"old": "63", "new": "64 & 65"}},
         }]
@@ -37,7 +38,10 @@ class ScheduleChangeFormattingTests(unittest.TestCase):
 
         self.assertIn("Schedule updated", text)
         self.assertIn("Tuesday, week 2", text)
-        self.assertIn("A &lt; B", text)
+        self.assertIn(
+            '<a href="https://dl.tntu.edu.ua/bounce.php?course=101">A &lt; B</a>',
+            text,
+        )
         self.assertIn("Room: 63 → 64 &amp; 65", text)
 
 
