@@ -6,19 +6,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
+from bot import router as handlers_module  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
 from schedule.sharing import (  # noqa: E402
     COPY_TEXT_LIMIT,
     build_day_share,
     build_week_share,
     get_share_message_keyboard,
 )
-from bot.router import ScheduleBotHandlers  # noqa: E402
-from bot import router as handlers_module  # noqa: E402
 
 
 class DaySharingTests(unittest.TestCase):
@@ -54,11 +53,13 @@ class DaySharingTests(unittest.TestCase):
         self.assertNotIn("A < B", html_text)
 
     def test_returns_none_without_actual_classes(self):
-        self.assertIsNone(build_day_share(
-            "СТс-21",
-            datetime(2026, 8, 17),
-            [{"time": "PDF", "name": "Schedule.pdf", "is_pdf": True}],
-        ))
+        self.assertIsNone(
+            build_day_share(
+                "СТс-21",
+                datetime(2026, 8, 17),
+                [{"time": "PDF", "name": "Schedule.pdf", "is_pdf": True}],
+            )
+        )
 
 
 class WeekSharingTests(unittest.TestCase):
@@ -67,9 +68,7 @@ class WeekSharingTests(unittest.TestCase):
         schedules[0] = [{"time": "08:00", "name": "Math", "is_pdf": False}]
         schedules[2] = [{"time": "10:00", "name": "Physics", "is_pdf": False}]
 
-        html_text, plain_text = build_week_share(
-            "СТс-21", datetime(2026, 8, 17), schedules, "en"
-        )
+        html_text, plain_text = build_week_share("СТс-21", datetime(2026, 8, 17), schedules, "en")
 
         self.assertIn("17.08–23.08.2026", plain_text)
         self.assertIn("Monday, 17.08", plain_text)
@@ -78,14 +77,11 @@ class WeekSharingTests(unittest.TestCase):
         self.assertLessEqual(len(html_text), 4096)
 
     def test_truncates_at_complete_lines(self):
-        schedules = [[
-            {"time": f"{index:02d}:00", "name": "Дуже довга назва " * 30, "is_pdf": False}
-            for index in range(20)
-        ]] + [[] for _ in range(6)]
+        schedules = [
+            [{"time": f"{index:02d}:00", "name": "Дуже довга назва " * 30, "is_pdf": False} for index in range(20)]
+        ] + [[] for _ in range(6)]
 
-        html_text, plain_text = build_week_share(
-            "СТс-21", datetime(2026, 8, 17), schedules, "uk"
-        )
+        html_text, plain_text = build_week_share("СТс-21", datetime(2026, 8, 17), schedules, "uk")
 
         self.assertLessEqual(len(html_text), 4096)
         self.assertIn("Частину розкладу приховано", plain_text)
@@ -140,7 +136,5 @@ class ShareHandlerTests(unittest.IsolatedAsyncioTestCase):
         ):
             await handler.process_share_week(callback)
 
-        callback.answer.assert_awaited_once_with(
-            "❌ Could not determine the requested period.", show_alert=True
-        )
+        callback.answer.assert_awaited_once_with("❌ Could not determine the requested period.", show_alert=True)
         get_schedule.assert_not_awaited()

@@ -3,7 +3,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
@@ -32,10 +31,15 @@ class ScheduleFormattingTests(unittest.TestCase):
 
     def test_rejects_non_http_links_and_escapes_legacy_name(self):
         self.assertIsNone(normalize_atutor_url("javascript:alert(1)"))
-        self.assertEqual("Legacy &amp; lesson", lesson_html({
-            "name": "Legacy & lesson",
-            "atutor_url": "javascript:alert(1)",
-        }))
+        self.assertEqual(
+            "Legacy &amp; lesson",
+            lesson_html(
+                {
+                    "name": "Legacy & lesson",
+                    "atutor_url": "javascript:alert(1)",
+                }
+            ),
+        )
 
     def test_html_link_escapes_label_and_url_and_rejects_unsafe_scheme(self):
         self.assertEqual(

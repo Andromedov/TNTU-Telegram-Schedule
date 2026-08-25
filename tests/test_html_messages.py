@@ -4,14 +4,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from i18n.messages import get_html_msg, trusted_html  # noqa: E402
 from bot import router as handlers  # noqa: E402
 from bot.router import ScheduleBotHandlers  # noqa: E402
+from i18n.messages import get_html_msg, trusted_html  # noqa: E402
 
 
 class HtmlMessageTests(unittest.TestCase):
@@ -46,20 +45,23 @@ class ScheduleHtmlTests(unittest.IsolatedAsyncioTestCase):
         user = {"user_id": 1, "group_name": "A<1> & B", "language": "en"}
         schedule = [
             {
-                "is_pdf": True, "name": "PDF <draft> & notes", "url": "https://example.com/a.pdf",
+                "is_pdf": True,
+                "name": "PDF <draft> & notes",
+                "url": "https://example.com/a.pdf",
                 "viewer_url": "https://example.com/view",
             },
             {
-                "is_pdf": False, "time": "10:00 < 11:00", "subject": "A < B",
-                "lesson_type": "lecture", "location": "K1 & K2",
+                "is_pdf": False,
+                "time": "10:00 < 11:00",
+                "subject": "A < B",
+                "lesson_type": "lecture",
+                "location": "K1 & K2",
             },
         ]
 
         with (
             patch.object(handlers.db, "get_user", new=AsyncMock(return_value=user)),
-            patch.object(
-                handlers.scraper, "_get_schedule_for_date", new=AsyncMock(return_value=schedule)
-            ),
+            patch.object(handlers.scraper, "_get_schedule_for_date", new=AsyncMock(return_value=schedule)),
         ):
             text, _ = await handler._generate_schedule_ui(1, 0)
 
