@@ -9,6 +9,7 @@ import asyncio
 import urllib.parse
 import re
 from typing import Optional, Tuple, List, Dict, Any
+from schedule_formatting import normalize_atutor_url
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 SNAPSHOTS_FILE = "data/schedule_snapshots.json"
@@ -449,7 +450,7 @@ def _parse_lesson_cell(cell: Tag, time_text: str) -> Optional[Dict[str, Any]]:
     notes_element = cell.find('div', attrs={'class': 'Notes'})
     notes = _extract_text(notes_element) if isinstance(notes_element, Tag) else None
     href = str(subject_link.get('href')) if isinstance(subject_link, Tag) else None
-    atutor_url = urllib.parse.urljoin(TNTU_SCHEDULE_URL, href) if href else None
+    atutor_url = normalize_atutor_url(urllib.parse.urljoin(TNTU_SCHEDULE_URL, href)) if href else None
 
     details = [value for value in (lesson_type, location) if value]
     full_name = subject + (f" ({', '.join(details)})" if details else '')

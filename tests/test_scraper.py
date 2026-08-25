@@ -39,7 +39,7 @@ class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Алгоритми", first_week["subject"])
         self.assertEqual("лекція", first_week["lesson_type"])
         self.assertEqual("ATutor", first_week["location"])
-        self.assertEqual("http://dl.tntu.edu.ua/bounce.php?course=101", first_week["atutor_url"])
+        self.assertEqual("https://dl.tntu.edu.ua/bounce.php?course=101", first_week["atutor_url"])
         self.assertIsNone(first_week["building"])
         self.assertEqual("К2", second_week["building"])
         self.assertEqual("63", second_week["room"])

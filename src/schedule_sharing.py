@@ -4,6 +4,7 @@ from html import escape
 from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 from messages import get_msg
+from schedule_formatting import lesson_html, lesson_plain_text
 
 
 TELEGRAM_MESSAGE_LIMIT = 4096
@@ -42,8 +43,8 @@ def build_day_share(
 
     truncated = False
     for item in classes:
-        plain_line = f"⏰ {item.get('time', '')} — {item.get('name', '')}"
-        html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {escape(str(item.get('name', '')))}"
+        plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item)}"
+        html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item)}"
         if not _append_with_limit(html_parts, plain_parts, html_line, plain_line):
             truncated = True
             break
@@ -91,8 +92,8 @@ def build_week_share(
             truncated = True
             break
         for item in classes:
-            plain_line = f"⏰ {item.get('time', '')} — {item.get('name', '')}"
-            html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {escape(str(item.get('name', '')))}"
+            plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item)}"
+            html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item)}"
             if not _append_with_limit(html_parts, plain_parts, html_line, plain_line):
                 truncated = True
                 break

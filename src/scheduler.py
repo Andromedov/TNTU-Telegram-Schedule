@@ -11,6 +11,7 @@ from html import escape
 from datetime import datetime, timedelta
 from messages import get_msg, normalize_language
 from reminder_utils import KYIV_TZ, kyiv_now, notifications_are_muted
+from schedule_formatting import lesson_html
 
 
 GROUP_CHECK_CONCURRENCY = 8
@@ -316,7 +317,7 @@ async def send_evening_schedule(bot: Bot):
                         has_pdf = True
                     text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
             try:
                 await bot.send_message(
                     user['user_id'],
@@ -329,7 +330,7 @@ async def send_evening_schedule(bot: Bot):
                 logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
 
-async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str, offset: int):
+async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, scheduled_group: str, offset: int):
     """Відправляє нагадування про конкретну пару."""
     user = await db.get_user(user_id)
 
@@ -343,14 +344,16 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     language = normalize_language(user_dict.get("language"))
     time_str = _format_reminder_offset(offset, language)
 
+    subject_html = lesson_html(lesson) if isinstance(lesson, dict) else escape(lesson)
     text = get_msg("reminders.class_starts", language=language,
-                   time_str=time_str, subject_name=escape(subject_name))
+                   time_str=time_str, subject_name=subject_html)
 
     try:
         await bot.send_message(
             user_id,
             text,
             parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=_get_reminder_keyboard(language)
         )
     except Exception as e:
@@ -391,7 +394,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
                             send_class_reminder,
                             'date',
                             run_date=reminder_time,
-                            args=[bot, uid, item['name'], group_name, offset],
+                            args=[bot, uid, item, group_name, offset],
                             id=_reminder_job_id(uid, group_name, class_time, item['name']),
                             replace_existing=True,
                         )
@@ -435,7 +438,7 @@ async def send_morning_digest(bot: Bot, digest_hour: int):
             text = get_msg("reminders.digest_title", language=language, group=escape(group_name)) + "\n"
             if classes:
                 for item in classes:
-                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {escape(str(item['name']))}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item)}\n"
             else:
                 text += get_msg("reminders.digest_empty", language=language)
             try:
