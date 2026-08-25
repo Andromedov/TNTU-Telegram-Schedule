@@ -85,6 +85,7 @@ TNTU-Telegram-Schedule/
 │   ├── main.py              # Application entry point
 │   ├── handlers.py          # User interactions and commands
 │   ├── scraper.py           # TNTU website scraping logic
+│   ├── http_client.py       # Shared HTTP session, timeouts, retries, and rate limits
 │   ├── scheduler.py         # Automated tasks and reminders
 │   ├── database.py          # SQLite database operations
 │   ├── messages.py          # Localization loading and locale fallback

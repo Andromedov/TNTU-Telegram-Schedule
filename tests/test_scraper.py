@@ -14,12 +14,26 @@ sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
 import scraper  # noqa: E402
+from http_client import HttpTextResponse  # noqa: E402
 
 
 FIXTURE = (ROOT / "tests" / "fixtures" / "schedule_week.html").read_text(encoding="utf-8")
 
 
 class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fetch_uses_shared_http_client(self):
+        scraper._html_cache.clear()
+        request = AsyncMock(return_value=HttpTextResponse(200, FIXTURE))
+
+        with patch.object(scraper.http_client, "request_text", new=request):
+            html = await scraper.fetch_schedule_html("Тестова група")
+
+        self.assertEqual(FIXTURE, html)
+        request.assert_awaited_once_with(
+            "POST", scraper.TNTU_SCHEDULE_URL,
+            params={"p": "uk/schedule"}, data={"group": "Тестова група"},
+        )
+
     def test_builds_real_group_slug_and_rejects_another_groups_table(self):
         group = chr(0x421) + chr(0x422) + "-11"
         self.assertEqual("st11", scraper._transliterate_for_url(group))
