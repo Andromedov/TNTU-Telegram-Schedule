@@ -7,6 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramBadRequest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
+from html import escape
 import logging
 import asyncio
 import hashlib
@@ -14,12 +15,12 @@ import hashlib
 import database as db
 import scraper
 from scheduler import promote_groups_dry_run, send_snoozed_reminder
-from messages import get_msg, normalize_language
+from messages import get_html_msg, get_msg, normalize_language, trusted_html
 from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
 from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
-from schedule_formatting import lesson_html
+from schedule_formatting import html_link, lesson_html
 from reminder_utils import (
     REMINDER_LESSON_TYPES,
     kyiv_now,
@@ -410,8 +411,10 @@ class ScheduleBotHandlers:
                 h, m = map(int, start_time_str.split(':'))
                 class_time = now.replace(hour=h, minute=m, second=0)
                 if class_time > now:
-                    return get_msg("start.next_class", language=language, time=start_time_str,
-                                   subject=lesson_html(item))
+                    return get_html_msg(
+                        "start.next_class", language=language, time=start_time_str,
+                        subject=trusted_html(lesson_html(item)),
+                    )
             except Exception:
                 pass
         return get_msg("start.no_more_classes", language=language)
@@ -439,8 +442,10 @@ class ScheduleBotHandlers:
         else:
             relative_day = ""
 
-        text = get_msg("schedule.day_header", language=language, day=day_name, relative=relative_day,
-                       date=date_str, group=user['group_name'])
+        text = get_html_msg(
+            "schedule.day_header", language=language, day=day_name, relative=relative_day,
+            date=date_str, group=user['group_name'],
+        )
         pdf_buttons = []
 
         if not schedule:
@@ -452,14 +457,14 @@ class ScheduleBotHandlers:
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
                         has_pdf = True
-                    text += f"📄 <b>{item['name']}</b>\n"
+                    text += f"📄 <b>{escape(str(item['name']))}</b>\n"
                     pdf_key = _get_pdf_key(item['url'])
                     pdf_buttons.append([
                         InlineKeyboardButton(text=get_msg("keyboard.open_web", language=language), url=item['viewer_url']),
                         InlineKeyboardButton(text=get_msg("keyboard.get_file", language=language), callback_data=f"send_pdf:{pdf_key}")
                     ])
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
 
         extra_buttons = self.get_building_shortcuts(
             schedule_buildings([schedule]), f"nav_schedule:{offset}"
@@ -477,8 +482,10 @@ class ScheduleBotHandlers:
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         sunday = monday + timedelta(days=6)
 
-        text = get_msg("schedule.week_header", language=language, start=monday.strftime('%d.%m'),
-                       end=sunday.strftime('%d.%m'), group=user['group_name'])
+        text = get_html_msg(
+            "schedule.week_header", language=language, start=monday.strftime('%d.%m'),
+            end=sunday.strftime('%d.%m'), group=user['group_name'],
+        )
 
         weekdays = get_msg("schedule.weekdays", language=language).split("|")
 
@@ -499,9 +506,9 @@ class ScheduleBotHandlers:
 
             if day_classes:
                 has_any_classes = True
-                text += f"🔹 <b>{weekdays[i]} ({current_date.strftime('%d.%m')}):</b>\n"
+                text += f"🔹 <b>{escape(weekdays[i])} ({current_date.strftime('%d.%m')}):</b>\n"
                 for item in day_classes:
-                    text += f"  ⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
+                    text += f"  ⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
                 text += "\n"
 
         if not has_any_classes:
@@ -511,7 +518,7 @@ class ScheduleBotHandlers:
         if all_pdfs:
             text += f"<s>{'—' * 25}</s>\n\n"
             for pdf in all_pdfs.values():
-                text += f"📄 <b>{pdf['name']}</b>\n"
+                text += f"📄 <b>{escape(str(pdf['name']))}</b>\n"
                 pdf_key = _get_pdf_key(pdf['url'])
                 pdf_buttons.append([
                     InlineKeyboardButton(text=get_msg("keyboard.open_web", language=language), url=pdf['viewer_url']),
@@ -551,9 +558,11 @@ class ScheduleBotHandlers:
         else:
             next_class = await self._get_next_class_text(user['group_name'], language)
             msg = await message.answer(
-                get_msg("start.greeting_existing", language=language,
-                        name=message.from_user.first_name, group=user['group_name'],
-                        next_class=next_class),
+                get_html_msg(
+                    "start.greeting_existing", language=language,
+                    name=message.from_user.first_name, group=user['group_name'],
+                    next_class=trusted_html(next_class),
+                ),
                 parse_mode="HTML",
                 disable_web_page_preview=True,
                 reply_markup=self.get_main_keyboard(language)
@@ -635,20 +644,20 @@ class ScheduleBotHandlers:
             await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
             return
 
-        checking_text = get_msg("group.checking", language=language, group=group_name)
+        checking_text = get_html_msg("group.checking", language=language, group=group_name)
         processing_msg = await message.answer(checking_text, parse_mode="HTML")
 
         is_valid = await scraper.check_group_exists(group_name)
 
         if is_valid:
             await db.add_or_update_user(message.from_user.id, group_name, language)
-            await processing_msg.edit_text(get_msg("group.saved", language=language, group_name=group_name),
+            await processing_msg.edit_text(get_html_msg("group.saved", language=language, group_name=group_name),
                                            parse_mode="HTML",
                                            reply_markup=self.get_main_keyboard(language))
             await state.set_state(None)
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
         else:
-            await processing_msg.edit_text(get_msg("group.not_found", language=language, group=group_name),
+            await processing_msg.edit_text(get_html_msg("group.not_found", language=language, group=group_name),
                                            parse_mode="HTML")
             await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
@@ -1206,8 +1215,10 @@ class ScheduleBotHandlers:
             return
         next_class = await self._get_next_class_text(user['group_name'], language)
         await callback.message.edit_text(
-            get_msg("start.main_menu_title", language=language,
-                    group=user['group_name'], next_class=next_class),
+            get_html_msg(
+                "start.main_menu_title", language=language,
+                group=user['group_name'], next_class=trusted_html(next_class),
+            ),
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=self.get_main_keyboard(language))
@@ -1261,10 +1272,11 @@ class ScheduleBotHandlers:
     async def process_admin_stats(self, callback: CallbackQuery):
         if not SENIOR_ID or callback.from_user.id != SENIOR_ID: return
         stats = await db.get_statistics()
-        text = f"📊 <b>Статистика:</b>\n👥 Всього: <b>{stats['total']}</b>\n🟢 Активних: <b>{stats['active']}</b>\n\n🏆 <b>Топ 5:</b>\n"
+        text = (f"📊 <b>Статистика:</b>\n👥 Всього: <b>{escape(str(stats['total']))}</b>\n"
+                f"🟢 Активних: <b>{escape(str(stats['active']))}</b>\n\n🏆 <b>Топ 5:</b>\n")
 
         for idx, group in enumerate(stats['top_groups'], 1):
-            text += f"{idx}. {group['group_name']} ({group['count']})\n"
+            text += f"{idx}. {escape(str(group['group_name']))} ({escape(str(group['count']))})\n"
 
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=self.get_admin_keyboard())
         await callback.answer()
@@ -1287,9 +1299,9 @@ class ScheduleBotHandlers:
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
                         has_pdf = True
-                    text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
+                    text += f"📄 {html_link(item['name'], item.get('viewer_url'))}\n"
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
             await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
         else:
             await callback.message.answer("Пар на завтра немає (результат тесту).")
@@ -1319,8 +1331,10 @@ class ScheduleBotHandlers:
         user_dict = dict(user)
         offset = user_dict.get('reminder_offset', 10)
         time_str = f"{offset} хв"
-        text = get_msg("reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
-                       time_str=time_str, subject_name="[ТЕСТ] Основи програмування")
+        text = get_html_msg(
+            "reminders.class_starts", "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
+            time_str=time_str, subject_name="[ТЕСТ] Основи програмування",
+        )
         await callback.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="✅ Прочитано", callback_data="delete_msg")]]))
         await callback.answer("Відправлено тестове нагадування.")
@@ -1331,7 +1345,7 @@ class ScheduleBotHandlers:
         await callback.answer("Запускаю аналіз груп...", show_alert=False)
         report = await promote_groups_dry_run(callback.bot)
         if len(report) > 3000: report = report[:3000] + "\n... (обрізано)"
-        await callback.message.answer(f"🧪 <b>Dry-Run переведення:</b>\n<pre>{report}</pre>", parse_mode="HTML",
+        await callback.message.answer(f"🧪 <b>Dry-Run переведення:</b>\n<pre>{escape(str(report))}</pre>", parse_mode="HTML",
                                       reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                           [InlineKeyboardButton(text="Закрити", callback_data="delete_msg")]]))
 

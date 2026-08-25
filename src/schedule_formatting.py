@@ -4,14 +4,30 @@ from urllib.parse import urlparse, urlunparse
 
 def normalize_atutor_url(value: str | None) -> str | None:
     """Переводить офіційні ATutor-посилання на HTTPS."""
-    if not value:
+    normalized = normalize_http_url(value)
+    if not normalized:
         return None
-    parsed = urlparse(str(value).strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
+    parsed = urlparse(normalized)
     if parsed.hostname == "dl.tntu.edu.ua" and parsed.scheme in {"http", "https"}:
         return urlunparse(parsed._replace(scheme="https"))
-    return str(value).strip()
+    return normalized
+
+
+def normalize_http_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = str(value).strip()
+    parsed = urlparse(normalized)
+    return normalized if parsed.scheme in {"http", "https"} and parsed.netloc else None
+
+
+def html_link(label: object, url: str | None) -> str:
+    """Створює безпечне HTML-посилання або повертає лише екранований підпис."""
+    safe_label = escape(str(label))
+    normalized_url = normalize_http_url(url)
+    if not normalized_url:
+        return safe_label
+    return f'<a href="{escape(normalized_url, quote=True)}">{safe_label}</a>'
 
 
 def lesson_plain_text(item: dict) -> str:
