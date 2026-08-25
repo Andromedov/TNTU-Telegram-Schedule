@@ -48,6 +48,27 @@ class ScheduleChangeFormattingTests(unittest.TestCase):
         self.assertIn("Room: 63 → 64 &amp; 65", text)
 
 
+class SchedulerConfigurationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recurring_jobs_have_stable_monitoring_ids(self):
+        configured_scheduler = scheduler.setup_scheduler(AsyncMock())
+
+        job_ids = {job.id for job in configured_scheduler.get_jobs()}
+
+        self.assertEqual(
+            {
+                "evening_schedule",
+                "daily_reminders",
+                "morning_digest_6",
+                "morning_digest_7",
+                "morning_digest_8",
+                "morning_digest_9",
+                "schedule_updates",
+                "group_promotion",
+            },
+            job_ids,
+        )
+
+
 class PromotionTests(unittest.IsolatedAsyncioTestCase):
     async def test_lookup_failure_does_not_change_user(self):
         user = {"user_id": 1, "group_name": "СТс-21"}
