@@ -21,6 +21,7 @@ from ics_generator import generate_week_ics
 from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
 from schedule_formatting import lesson_html
 from reminder_utils import kyiv_now, muted_until_tomorrow, temporary_notifications_are_muted
+from campus import BUILDINGS, CAMPUS_MAP_URL, building_card, schedule_buildings
 
 # ==========================================
 #          КЕШ ТА СТАТИСТИКА
@@ -90,7 +91,8 @@ class ScheduleBotHandlers:
         """Повертає список команд для автоматичного встановлення меню бота в Telegram."""
         return [
             BotCommand(command="start", description=get_msg('commands.start', language=language)),
-            BotCommand(command="settings", description=get_msg('commands.settings', language=language))
+            BotCommand(command="settings", description=get_msg('commands.settings', language=language)),
+            BotCommand(command="campus", description=get_msg('commands.campus', language=language)),
         ]
 
     # ==========================================
@@ -105,11 +107,50 @@ class ScheduleBotHandlers:
                 InlineKeyboardButton(text=get_msg('keyboard.show_schedule', language=language), callback_data="nav_schedule:0"),
                 InlineKeyboardButton(text=get_msg('keyboard.show_week', language=language), callback_data="nav_week:0")
             ],
+            [InlineKeyboardButton(text=get_msg('keyboard.campus', language=language), callback_data="show_campus")],
             [InlineKeyboardButton(text=get_msg('keyboard.settings', language=language), callback_data="show_settings")],
             [InlineKeyboardButton(text=get_msg('keyboard.change_group', language=language),
                                   callback_data="change_group")]
         ]
         return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_campus_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
+        buttons = [
+            InlineKeyboardButton(text=f"🏫 К{number}", callback_data=f"campus_building:{number}")
+            for number in BUILDINGS
+        ]
+        rows = [buttons[index:index + 3] for index in range(0, len(buttons), 3)]
+        rows.extend([
+            [InlineKeyboardButton(text=get_msg("campus.map", language=language), url=CAMPUS_MAP_URL)],
+            [InlineKeyboardButton(text=get_msg("keyboard.back", language=language), callback_data="back_to_main")],
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    @staticmethod
+    def get_building_keyboard(language: str = "uk", back_callback: str = "show_campus") -> InlineKeyboardMarkup:
+        back_text = get_msg(
+            "campus.all" if back_callback == "show_campus" else "calendar.back",
+            language=language,
+        )
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=get_msg("campus.map", language=language), url=CAMPUS_MAP_URL)],
+            [InlineKeyboardButton(text=back_text, callback_data=back_callback)],
+            [InlineKeyboardButton(text=get_msg("keyboard.menu", language=language), callback_data="back_to_main")],
+        ])
+
+    @staticmethod
+    def get_building_shortcuts(
+            buildings: list[int], back_callback: str | None = None
+    ) -> list[list[InlineKeyboardButton]]:
+        buttons = [
+            InlineKeyboardButton(
+                text=f"🏫 К{number}",
+                callback_data=f"campus_building:{number}" + (f":{back_callback}" if back_callback else ""),
+            )
+            for number in buildings
+        ]
+        return [buttons[index:index + 3] for index in range(0, len(buttons), 3)]
 
     @staticmethod
     def get_settings_keyboard(user_data) -> InlineKeyboardMarkup:
@@ -333,7 +374,10 @@ class ScheduleBotHandlers:
                 else:
                     text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
 
-        return text, self.get_schedule_nav_keyboard(offset, pdf_buttons, language)
+        extra_buttons = self.get_building_shortcuts(
+            schedule_buildings([schedule]), f"nav_schedule:{offset}"
+        ) + pdf_buttons
+        return text, self.get_schedule_nav_keyboard(offset, extra_buttons, language)
 
     async def _generate_week_schedule_ui(self, user_id: int, offset_weeks: int) -> tuple[str, InlineKeyboardMarkup]:
         """Генерує розклад на весь тиждень (Пн-Нд)."""
@@ -392,7 +436,10 @@ class ScheduleBotHandlers:
             if cut_idx != -1:
                 text = text[:cut_idx] + "\n\n" + get_msg("schedule.truncated", language=language)
 
-        return text, self.get_week_nav_keyboard(offset_weeks, pdf_buttons, language)
+        extra_buttons = self.get_building_shortcuts(
+            schedule_buildings(week_schedules), f"nav_week:{offset_weeks}"
+        ) + pdf_buttons
+        return text, self.get_week_nav_keyboard(offset_weeks, extra_buttons, language)
 
     # ==========================================
     #            ОБРОБНИКИ
@@ -444,6 +491,23 @@ class ScheduleBotHandlers:
         msg = await message.answer(get_msg("settings.title", language=language),
                                    parse_mode="HTML",
                                    reply_markup=self.get_settings_keyboard(user))
+        await state.update_data(last_ui_msg_id=msg.message_id)
+
+    async def cmd_campus(self, message: Message, state: FSMContext):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        user = await db.get_user(message.from_user.id)
+        language = self._user_language(user, message.from_user.language_code)
+        await self._cleanup_old_ui(message, state)
+        await state.set_state(None)
+        msg = await message.answer(
+            get_msg("campus.title", language=language),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=self.get_campus_keyboard(language),
+        )
         await state.update_data(last_ui_msg_id=msg.message_id)
 
     async def cmd_admin(self, message: Message, state: FSMContext):
@@ -755,6 +819,39 @@ class ScheduleBotHandlers:
                                          reply_markup=self.get_settings_keyboard(user))
         await callback.answer()
 
+    async def process_show_campus(self, callback: CallbackQuery, state: FSMContext):
+        await state.set_state(None)
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("campus.title", language=language),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=self.get_campus_keyboard(language),
+        )
+        await callback.answer()
+
+    async def process_campus_building(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        try:
+            parts = callback.data.split(":")
+            number = int(parts[1])
+        except (IndexError, ValueError):
+            await callback.answer(get_msg("campus.unknown", language=language), show_alert=True)
+            return
+
+        text = building_card(number, language)
+        if text is None:
+            await callback.answer(get_msg("campus.unknown", language=language), show_alert=True)
+            return
+        back_callback = ":".join(parts[2:]) if len(parts) > 2 else "show_campus"
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=self.get_building_keyboard(language, back_callback),
+        )
+        await callback.answer()
+
     async def process_settings_reminder(self, callback: CallbackQuery):
         """Відкриває підменю вибору часу нагадування."""
         language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
@@ -1063,6 +1160,7 @@ class ScheduleBotHandlers:
         # Команди
         self.router.message.register(self.cmd_start, Command("start"))
         self.router.message.register(self.cmd_settings, Command("settings"))
+        self.router.message.register(self.cmd_campus, Command("campus"))
         self.router.message.register(self.cmd_admin, Command("admin"))
 
         # FSM (Очікування уводу)
@@ -1076,6 +1174,8 @@ class ScheduleBotHandlers:
         self.router.callback_query.register(self.process_export_ics, F.data.startswith("export_ics:"))
         self.router.callback_query.register(self.process_share_day, F.data.startswith("share_day:"))
         self.router.callback_query.register(self.process_share_week, F.data.startswith("share_week:"))
+        self.router.callback_query.register(self.process_show_campus, F.data == "show_campus")
+        self.router.callback_query.register(self.process_campus_building, F.data.startswith("campus_building:"))
 
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
         self.router.callback_query.register(self.process_settings_language, F.data == "settings_language")

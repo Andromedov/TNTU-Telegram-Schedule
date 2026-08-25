@@ -1,7 +1,7 @@
 {
   "uk": {
     "bot": {"started": "Бот запущено!"},
-    "commands": {"start": "Головне меню бота", "settings": "Налаштування сповіщень"},
+    "commands": {"start": "Головне меню бота", "settings": "Налаштування сповіщень", "campus": "Адреси корпусів ТНТУ"},
     "keyboard": {
       "evening": "Розклад ввечері", "pause": "Пауза сповіщень",
       "schedule_update": "Сповіщення про оновлення розкладу",
@@ -12,7 +12,7 @@
       "previous_week": "⬅️ Тиждень", "next_week": "Тиждень ➡️",
       "current_week": "📍 Поточний тиждень", "export_ics": "📲 Експорт у календар (.ics)",
       "open_web": "👀 Відкрити (Web)", "get_file": "📩 Отримати файлом",
-      "language": "🌐 Мова: Українська"
+      "language": "🌐 Мова: Українська", "campus": "🏫 Корпуси та аудиторії"
     },
     "start": {
       "greeting_new": "👋 Привіт! Я бот, який допоможе тобі слідкувати за розкладом ТНТУ.\n\nБудь ласка, напиши назву своєї групи (наприклад, СТс-21):",
@@ -55,6 +55,12 @@
       "ask_date": "📅 <b>Оберіть потрібну дату:</b>\nВикористовуйте календар нижче або швидкі кнопки.",
       "truncated": "<i>... (частину розкладу приховано через ліміт Telegram)</i>",
       "updated": "🔄 Оновлено!", "current": "✅ Розклад актуальний."
+    },
+    "campus": {
+      "title": "🏫 <b>Корпуси ТНТУ</b>\n\nОберіть корпус, щоб побачити адресу та короткий орієнтир.\n\n💡 Позначення <b>К2-68</b> означає: корпус 2, аудиторія 68. Якщо позначення незрозуміле, уточніть локацію в деканаті або на вахті найближчого корпусу.",
+      "card": "🏫 <b>Корпус № {number}</b>\n\n📍 <b>Адреса:</b> {address}\n🧭 <b>Як знайти:</b> {directions}\n\n💡 <b>{example}</b>: корпус {number}, аудиторія 101.",
+      "map": "🗺 Відкрити карту корпусів", "all": "🏫 Усі корпуси",
+      "unknown": "❌ Інформацію про цей корпус не знайдено."
     },
     "settings": {
       "title": "⚙️ <b>Налаштування сповіщень:</b>", "updated": "Налаштування оновлено!",
@@ -109,14 +115,15 @@
   },
   "en": {
     "bot": {"started": "Bot started!"},
-    "commands": {"start": "Open the main menu", "settings": "Notification settings"},
+    "commands": {"start": "Open the main menu", "settings": "Notification settings", "campus": "TNTU building addresses"},
     "keyboard": {
       "evening": "Evening schedule", "pause": "Pause notifications", "schedule_update": "Schedule update alerts",
       "show_schedule": "📅 Daily schedule", "show_week": "🗓 Weekly schedule", "settings": "⚙️ Settings",
       "change_group": "🔄 Change group", "back": "🔙 Back to menu", "custom_date": "📅 Choose a date",
       "dismiss": "✅ Dismiss", "menu": "🏠 Menu", "refresh": "🔄 Refresh", "previous_week": "⬅️ Week",
       "next_week": "Week ➡️", "current_week": "📍 Current week", "export_ics": "📲 Export to calendar (.ics)",
-      "open_web": "👀 Open (Web)", "get_file": "📩 Get file", "language": "🌐 Language: English"
+      "open_web": "👀 Open (Web)", "get_file": "📩 Get file", "language": "🌐 Language: English",
+      "campus": "🏫 Buildings and rooms"
     },
     "start": {
       "greeting_new": "👋 Hi! I can help you follow the TNTU class schedule.\n\nPlease enter your group name (for example, СТс-21):",
@@ -155,6 +162,12 @@
       },
       "ask_date": "📅 <b>Choose a date:</b>\nUse the calendar or the quick buttons below.", "truncated": "<i>... (part of the schedule was hidden due to Telegram's limit)</i>",
       "updated": "🔄 Updated!", "current": "✅ Schedule is up to date."
+    },
+    "campus": {
+      "title": "🏫 <b>TNTU buildings</b>\n\nChoose a building to see its address and a short landmark description.\n\n💡 A room code such as <b>K2-68</b> means Building 2, room 68. If a location code is unclear, ask at your dean's office or the reception desk of the nearest building.",
+      "card": "🏫 <b>Building {number}</b>\n\n📍 <b>Address:</b> {address}\n🧭 <b>How to find it:</b> {directions}\n\n💡 <b>{example}</b> means Building {number}, room 101.",
+      "map": "🗺 Open campus map", "all": "🏫 All buildings",
+      "unknown": "❌ Information about this building was not found."
     },
     "settings": {
       "title": "⚙️ <b>Notification settings:</b>", "updated": "Settings updated!", "saved": "Settings saved!",
