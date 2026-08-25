@@ -34,6 +34,11 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(0, user["morning_digest"])
                 self.assertEqual(7, user["morning_digest_hour"])
                 self.assertIsNone(user["notifications_muted_until"])
+                self.assertEqual(1, user["notify_lectures"])
+                self.assertEqual(1, user["notify_laboratories"])
+                self.assertEqual(1, user["notify_practicals"])
+                self.assertIsNone(user["quiet_hours_start"])
+                self.assertIsNone(user["quiet_hours_end"])
             finally:
                 database.DB_PATH = original_path
 

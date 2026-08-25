@@ -10,7 +10,11 @@ import re
 from html import escape
 from datetime import datetime, timedelta
 from messages import get_msg, normalize_language
-from reminder_utils import KYIV_TZ, kyiv_now, notifications_are_muted
+from reminder_utils import (
+    kyiv_now,
+    notifications_are_muted,
+    reminder_enabled_for_lesson,
+)
 from schedule_formatting import lesson_html
 
 
@@ -338,7 +342,8 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
         return
     user_dict = dict(user)
     if (notifications_are_muted(user_dict) or not user_dict['notify_10_min']
-            or user_dict['group_name'] != scheduled_group):
+            or user_dict['group_name'] != scheduled_group
+            or not reminder_enabled_for_lesson(user_dict, lesson)):
         return
 
     language = normalize_language(user_dict.get("language"))
@@ -384,6 +389,8 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
                     hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0
                 )
                 for user in group_users:
+                    if not reminder_enabled_for_lesson(user, item):
+                        continue
                     first_offset = user.get('first_class_reminder_offset')
                     offset = int(first_offset) if class_index == 0 and first_offset is not None \
                         else int(user.get('reminder_offset', 10))

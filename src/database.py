@@ -15,7 +15,12 @@ EXPECTED_COLUMNS = {
     'first_class_reminder_offset': 'INTEGER',
     'morning_digest': 'BOOLEAN DEFAULT 0',
     'morning_digest_hour': 'INTEGER DEFAULT 7',
-    'notifications_muted_until': 'TEXT'
+    'notifications_muted_until': 'TEXT',
+    'notify_lectures': 'BOOLEAN DEFAULT 1',
+    'notify_laboratories': 'BOOLEAN DEFAULT 1',
+    'notify_practicals': 'BOOLEAN DEFAULT 1',
+    'quiet_hours_start': 'INTEGER',
+    'quiet_hours_end': 'INTEGER'
 }
 
 
