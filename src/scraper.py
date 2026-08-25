@@ -2,7 +2,6 @@ import aiohttp
 from bs4 import BeautifulSoup, Tag
 import logging
 from datetime import datetime, timedelta
-import hashlib
 import json
 import os
 import copy
@@ -10,9 +9,10 @@ import asyncio
 import urllib.parse
 import re
 from typing import Optional, Tuple, List, Dict, Any
+from schedule_formatting import normalize_atutor_url
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
-HASHES_FILE = "data/schedule_hashes.json"
+SNAPSHOTS_FILE = "data/schedule_snapshots.json"
 
 # ==========================================
 #          ГЛОБАЛЬНИЙ КЕШ
@@ -68,18 +68,26 @@ def _extract_text(element: Tag) -> str:
 
 def _is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
     """Перевіряє, чи містить сторінка розклад для цільової групи (допоміжна функція)."""
-    if isinstance(soup.find('table', attrs={'id': 'ScheduleWeek'}), Tag):
-        return True
-
+    has_target_heading = False
     for h2 in soup.find_all('h2'):
         if isinstance(h2, Tag) and clean_group_no_hyphen in sanitize_group(_extract_text(h2)).upper().replace('-', ''):
-            return True
+            has_target_heading = True
+            break
 
-    return False
+    return has_target_heading and isinstance(soup.find('table', attrs={'id': 'ScheduleWeek'}), Tag)
 
 
 def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     """Визначає, який тиждень (1 чи 2) буде в цільову дату."""
+    semester_start = _extract_semester_start(soup)
+    if semester_start is not None:
+        semester_monday = semester_start.date() - timedelta(days=semester_start.weekday())
+        target_monday = target_date.date() - timedelta(days=target_date.weekday())
+        if target_monday < semester_monday:
+            return 1
+        weeks_diff = (target_monday - semester_monday).days // 7
+        return 1 if weeks_diff % 2 == 0 else 2
+
     h3_black = soup.find('h3', attrs={'class': 'Black'})
     current_week = 1
     if isinstance(h3_black, Tag):
@@ -97,24 +105,51 @@ def _get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     return current_week
 
 
+def _extract_semester_start(soup: BeautifulSoup) -> Optional[datetime]:
+    """Дістає початок семестру з заголовка над таблицею розкладу."""
+    months_map = {
+        'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4, 'травня': 5, 'червня': 6,
+        'липня': 7, 'серпня': 8, 'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12,
+    }
+    pattern = re.compile(r"(\d{1,2})\s+([а-яіїєґ]+).*?(\d{4})\s*року", re.IGNORECASE)
+    schedule = soup.find('div', attrs={'id': 'Schedule'})
+    root = schedule if isinstance(schedule, Tag) else soup
+    for heading in root.find_all(['h2', 'h3']):
+        if not isinstance(heading, Tag):
+            continue
+        match = pattern.search(_extract_text(heading))
+        if not match:
+            continue
+        month = months_map.get(match.group(2).lower())
+        if month:
+            try:
+                return datetime(int(match.group(3)), month, int(match.group(1)))
+            except ValueError:
+                return None
+    return None
+
+
 # ==========================================
 #    СИНХРОННІ ФУНКЦІЇ ДЛЯ РОБОТИ З ФАЙЛАМИ
 # ==========================================
 
-def _read_hashes_sync() -> dict:
-    if os.path.exists(HASHES_FILE):
-        try:
-            with open(HASHES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
-    return {}
+def _read_snapshots_sync() -> dict:
+    if not os.path.exists(SNAPSHOTS_FILE):
+        return {}
+    try:
+        with open(SNAPSHOTS_FILE, 'r', encoding='utf-8') as file:
+            value = json.load(file)
+            return value if isinstance(value, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
-def _write_hashes_sync(hashes: dict):
-    os.makedirs(os.path.dirname(HASHES_FILE), exist_ok=True)
-    with open(HASHES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(hashes, f)
+def _write_snapshots_sync(snapshots: dict):
+    os.makedirs(os.path.dirname(SNAPSHOTS_FILE), exist_ok=True)
+    temporary_file = f"{SNAPSHOTS_FILE}.tmp"
+    with open(temporary_file, 'w', encoding='utf-8') as file:
+        json.dump(snapshots, file, ensure_ascii=False, indent=2)
+    os.replace(temporary_file, SNAPSHOTS_FILE)
 
 
 # ==========================================
@@ -354,34 +389,201 @@ async def check_group_exists_status(group_name: str) -> Optional[bool]:
 
 
 async def check_schedule_changes(group_name: str) -> bool:
-    """Перевіряє, чи змінився розклад (хешує лише текст таблиці)."""
+    """Сумісна булева перевірка; деталі повертає get_schedule_changes()."""
+    return bool(await get_schedule_changes(group_name))
+
+
+def _build_schedule_grid(table: Tag) -> tuple[list[Tag], Dict[Tuple[int, int], Tag]]:
+    rows = [row for row in table.find_all('tr') if isinstance(row, Tag)]
+    grid: Dict[Tuple[int, int], Tag] = {}
+    for row_index, row in enumerate(rows):
+        column_index = 0
+        for cell in row.find_all(['td', 'th'], recursive=False):
+            if not isinstance(cell, Tag):
+                continue
+            while (row_index, column_index) in grid:
+                column_index += 1
+            try:
+                rowspan = int(str(cell.get('rowspan', 1)))
+                colspan = int(str(cell.get('colspan', 1)))
+            except ValueError:
+                rowspan = colspan = 1
+            for row_offset in range(rowspan):
+                for column_offset in range(colspan):
+                    grid[(row_index + row_offset, column_index + column_offset)] = cell
+            column_index += colspan
+    return rows, grid
+
+
+def _parse_location(location: str) -> tuple[Optional[str], Optional[str]]:
+    match = re.fullmatch(r"([А-ЯІЇЄҐA-Z]+\d+)\s*[-–—]\s*(.+)", location.strip(), re.IGNORECASE)
+    if not match:
+        return None, None
+    return match.group(1), match.group(2)
+
+
+def _parse_lesson_cell(cell: Tag, time_text: str) -> Optional[Dict[str, Any]]:
+    subject_link = cell.find('a', href=True)
+    subject_div = cell.find('div', attrs={'class': 'Subject'})
+    if isinstance(subject_link, Tag):
+        subject = _extract_text(subject_link)
+    elif isinstance(subject_div, Tag):
+        subject = _extract_text(subject_div)
+    else:
+        clone = copy.deepcopy(cell)
+        for detail in clone.find_all(['div', 'span'], attrs={'class': ['Info', 'Notes', 'LessonType']}):
+            if isinstance(detail, Tag):
+                detail.decompose()
+        subject = _extract_text(clone)
+
+    if not subject or subject == '-':
+        return None
+
+    info = cell.find('div', attrs={'class': 'Info'})
+    info_parts = list(info.stripped_strings) if isinstance(info, Tag) else []
+    lesson_type = str(info_parts[0]).strip().lower() if info_parts else None
+    location = str(info_parts[-1]).strip() if len(info_parts) > 1 else None
+    if location == lesson_type:
+        location = None
+    building, room = _parse_location(location or '')
+
+    notes_element = cell.find('div', attrs={'class': 'Notes'})
+    notes = _extract_text(notes_element) if isinstance(notes_element, Tag) else None
+    href = str(subject_link.get('href')) if isinstance(subject_link, Tag) else None
+    atutor_url = normalize_atutor_url(urllib.parse.urljoin(TNTU_SCHEDULE_URL, href)) if href else None
+
+    details = [value for value in (lesson_type, location) if value]
+    full_name = subject + (f" ({', '.join(details)})" if details else '')
+    if notes:
+        full_name += f" ❗️{notes}"
+
+    return {
+        'time': time_text,
+        'name': full_name,
+        'subject': subject,
+        'lesson_type': lesson_type,
+        'location': location,
+        'building': building,
+        'room': room,
+        'atutor_url': atutor_url,
+        'notes': notes,
+        'is_pdf': False,
+    }
+
+
+def _table_snapshot(table: Tag) -> List[Dict[str, Any]]:
+    rows, grid = _build_schedule_grid(table)
+    time_to_rows: Dict[int, Dict[str, Any]] = {}
+    for row_index in range(1, len(rows)):
+        time_cell = grid.get((row_index, 0))
+        if not isinstance(time_cell, Tag):
+            continue
+        data = time_to_rows.setdefault(id(time_cell), {'cell': time_cell, 'indices': []})
+        if row_index not in data['indices']:
+            data['indices'].append(row_index)
+
+    snapshot: List[Dict[str, Any]] = []
+    seen_cells = set()
+    for data in time_to_rows.values():
+        time_cell = data['cell']
+        time_div = time_cell.find('div', attrs={'class': 'LessonPeriod'})
+        time_text = _extract_text(time_div) if isinstance(time_div, Tag) else _extract_text(time_cell)
+        indices = data['indices']
+        for week in (1, 2):
+            row_index = indices[min(week - 1, len(indices) - 1)]
+            for weekday in range(5):
+                cell = grid.get((row_index, weekday + 1))
+                identity = (week, weekday, id(cell))
+                if not isinstance(cell, Tag) or identity in seen_cells:
+                    continue
+                seen_cells.add(identity)
+                lesson = _parse_lesson_cell(cell, time_text)
+                if lesson:
+                    lesson.update({'week': week, 'weekday': weekday})
+                    snapshot.append(lesson)
+    return snapshot
+
+
+def _lesson_identity(lesson: Dict[str, Any], include_time: bool = True) -> tuple:
+    values = (lesson.get('week'), lesson.get('weekday'))
+    if include_time:
+        values += (lesson.get('time'),)
+    return values + (lesson.get('subject'),)
+
+
+def _compare_schedule_snapshots(old: list, new: list) -> list:
+    def changed_details(before: dict, after: dict) -> dict:
+        fields = {
+            field: {'old': before.get(field), 'new': after.get(field)}
+            for field in ('lesson_type', 'building', 'room', 'atutor_url', 'notes')
+            if before.get(field) != after.get(field)
+        }
+        if (before.get('location') != after.get('location')
+                and not any(field in fields for field in ('building', 'room'))):
+            fields['location'] = {'old': before.get('location'), 'new': after.get('location')}
+        return fields
+
+    unmatched_new = list(new)
+    changes = []
+
+    for old_lesson in old:
+        exact = next((item for item in unmatched_new if _lesson_identity(item) == _lesson_identity(old_lesson)), None)
+        if exact is not None:
+            unmatched_new.remove(exact)
+            fields = changed_details(old_lesson, exact)
+            if fields:
+                changes.append({'kind': 'changed', 'lesson': exact, 'fields': fields})
+            continue
+
+        moved_candidates = [
+            item for item in unmatched_new
+            if _lesson_identity(item, include_time=False) == _lesson_identity(old_lesson, include_time=False)
+        ]
+        moved = next(
+            (item for item in moved_candidates if item.get('lesson_type') == old_lesson.get('lesson_type')),
+            moved_candidates[0] if moved_candidates else None,
+        )
+        if moved is not None:
+            unmatched_new.remove(moved)
+            fields = {'time': {'old': old_lesson.get('time'), 'new': moved.get('time')}}
+            fields.update(changed_details(old_lesson, moved))
+            changes.append({'kind': 'changed', 'lesson': moved, 'fields': fields})
+            continue
+
+        same_slot = next((item for item in unmatched_new
+                          if (item.get('week'), item.get('weekday'), item.get('time')) ==
+                          (old_lesson.get('week'), old_lesson.get('weekday'), old_lesson.get('time'))), None)
+        if same_slot is not None:
+            unmatched_new.remove(same_slot)
+            changes.append({'kind': 'changed', 'lesson': same_slot, 'fields': {
+                'subject': {'old': old_lesson.get('subject'), 'new': same_slot.get('subject')}
+            }})
+        else:
+            changes.append({'kind': 'removed', 'lesson': old_lesson})
+
+    changes.extend({'kind': 'added', 'lesson': lesson} for lesson in unmatched_new)
+    return changes
+
+
+async def get_schedule_changes(group_name: str) -> list:
+    """Зберігає структурований snapshot і повертає конкретні зміни."""
     html = await fetch_schedule_html(group_name)
     _, table, _, _ = _parse_core_data(html, group_name)
-
     if not isinstance(table, Tag):
-        return False
+        return []
 
-    for el in table.find_all(['h2', 'h3']):
-        if isinstance(el, Tag):
-            el.decompose()
-
-    table_text = _extract_text(table)
-    current_hash = hashlib.md5(table_text.encode('utf-8')).hexdigest()
-
-    hashes = await asyncio.to_thread(_read_hashes_sync)
-
-    clean_group = sanitize_group(group_name)
-    previous_hash = hashes.get(clean_group)
-
-    if previous_hash and previous_hash != current_hash:
-        hashes[clean_group] = current_hash
-        await asyncio.to_thread(_write_hashes_sync, hashes)
-        return True
-    elif not previous_hash:
-        hashes[clean_group] = current_hash
-        await asyncio.to_thread(_write_hashes_sync, hashes)
-
-    return False
+    current = _table_snapshot(table)
+    if not current and table.find('div', attrs={'class': 'Info'}):
+        logging.error("Таблиця групи %s містить пари, але жодну не вдалося розібрати", group_name)
+        return []
+    snapshots = await asyncio.to_thread(_read_snapshots_sync)
+    key = sanitize_group(group_name).upper()
+    previous = snapshots.get(key)
+    snapshots[key] = current
+    await asyncio.to_thread(_write_snapshots_sync, snapshots)
+    if not isinstance(previous, list):
+        return []
+    return _compare_schedule_snapshots(previous, current)
 
 
 async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list:
@@ -413,119 +615,10 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
         return formatted_pdfs
 
     target_week = _get_target_week(soup, target_date)
-
-    grid: Dict[Tuple[int, int], Tag] = {}
-    rows = table.find_all('tr')
-
-    for r_idx, row in enumerate(rows):
-        if not isinstance(row, Tag):
-            continue
-
-        col_idx = 0
-        cells = row.find_all(['td', 'th'])
-
-        for cell in cells:
-            if not isinstance(cell, Tag):
-                continue
-
-            while grid.get((r_idx, col_idx)) is not None:
-                col_idx += 1
-
-            rs_val = cell.get('rowspan')
-            if isinstance(rs_val, list):
-                rowspan = int(rs_val[0])
-            elif rs_val is not None:
-                rowspan = int(rs_val)
-            else:
-                rowspan = 1
-
-            cs_val = cell.get('colspan')
-            if isinstance(cs_val, list):
-                colspan = int(cs_val[0])
-            elif cs_val is not None:
-                colspan = int(cs_val)
-            else:
-                colspan = 1
-
-            for r in range(rowspan):
-                for c in range(colspan):
-                    grid[(r_idx + r, col_idx + c)] = cell
-            col_idx += colspan
-
-    target_col = weekday + 1
-    processed_cells = set()
-    time_to_rows = {}
-
-    for r_idx in range(1, len(rows)):
-        time_cell = grid.get((r_idx, 0))
-        if isinstance(time_cell, Tag):
-            t_id = id(time_cell)
-            if t_id not in time_to_rows:
-                time_to_rows[t_id] = {'cell': time_cell, 'indices': []}
-            if r_idx not in time_to_rows[t_id]['indices']:
-                time_to_rows[t_id]['indices'].append(r_idx)
-
-    for t_id, data in time_to_rows.items():
-        time_cell = data['cell']
-        if not isinstance(time_cell, Tag):
-            continue
-
-        indices = data['indices']
-
-        if len(indices) >= 2:
-            active_r_idx = indices[0] if target_week == 1 else indices[1]
-        else:
-            active_r_idx = indices[0]
-
-        target_cell = grid.get((active_r_idx, target_col))
-
-        if not isinstance(target_cell, Tag) or id(target_cell) in processed_cells:
-            continue
-
-        processed_cells.add(id(target_cell))
-
-        time_div = time_cell.find('div', attrs={'class': 'LessonPeriod'})
-        if isinstance(time_div, Tag):
-            time_text = _extract_text(time_div)
-        else:
-            time_text = _extract_text(time_cell)
-
-        if not time_text:
-            continue
-
-        subject_name = ""
-        subject_link = target_cell.find('a')
-        subject_div = target_cell.find('div', attrs={'class': 'Subject'})
-
-        if isinstance(subject_link, Tag):
-            subject_name = _extract_text(subject_link)
-        elif isinstance(subject_div, Tag):
-            subject_name = _extract_text(subject_div)
-        else:
-            clone = copy.deepcopy(target_cell)
-            for d in clone.find_all(['div', 'span', 'br'], attrs={'class': ['Info', 'Notes', 'LessonType']}):
-                if isinstance(d, Tag):
-                    d.decompose()
-            text = _extract_text(clone)
-            if text:
-                subject_name = text
-
-        if subject_name and subject_name not in ["-", ""]:
-            info_div = target_cell.find('div', attrs={'class': 'Info'})
-            notes_div = target_cell.find('div', attrs={'class': 'Notes'})
-
-            full_name = subject_name
-            if isinstance(info_div, Tag):
-                info_text = _extract_text(info_div)
-                if info_text:
-                    full_name += f" ({info_text})"
-
-            if isinstance(notes_div, Tag):
-                notes_text = _extract_text(notes_div)
-                if notes_text:
-                    full_name += f" ❗️{notes_text}"
-
-            schedule.append({'time': time_text, 'name': full_name, 'is_pdf': False})
+    schedule.extend(
+        lesson for lesson in _table_snapshot(table)
+        if lesson['week'] == target_week and lesson['weekday'] == weekday
+    )
 
     schedule.extend(formatted_pdfs)
     return schedule

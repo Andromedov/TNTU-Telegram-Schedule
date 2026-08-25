@@ -22,6 +22,29 @@ class GroupCandidateTests(unittest.TestCase):
         self.assertEqual("GRADUATED", scheduler._next_group_candidate("СТс-61"))
 
 
+class ScheduleChangeFormattingTests(unittest.TestCase):
+    def test_formats_localized_change_and_escapes_external_values(self):
+        changes = [{
+            "kind": "changed",
+            "lesson": {
+                "week": 2, "weekday": 1, "time": "9:30-10:50",
+                "subject": "A < B",
+                "atutor_url": "http://dl.tntu.edu.ua/bounce.php?course=101",
+            },
+            "fields": {"room": {"old": "63", "new": "64 & 65"}},
+        }]
+
+        text = scheduler._format_schedule_changes(changes, "en")
+
+        self.assertIn("Schedule updated", text)
+        self.assertIn("Tuesday, week 2", text)
+        self.assertIn(
+            '<a href="https://dl.tntu.edu.ua/bounce.php?course=101">A &lt; B</a>',
+            text,
+        )
+        self.assertIn("Room: 63 → 64 &amp; 65", text)
+
+
 class PromotionTests(unittest.IsolatedAsyncioTestCase):
     async def test_lookup_failure_does_not_change_user(self):
         user = {"user_id": 1, "group_name": "СТс-21"}

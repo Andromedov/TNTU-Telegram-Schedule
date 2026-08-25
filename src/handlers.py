@@ -19,6 +19,7 @@ from config import SENIOR_ID
 from calendar_ui import get_calendar_keyboard
 from ics_generator import generate_week_ics
 from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
+from schedule_formatting import lesson_html
 from reminder_utils import kyiv_now, muted_until_tomorrow, temporary_notifications_are_muted
 
 # ==========================================
@@ -281,7 +282,8 @@ class ScheduleBotHandlers:
                 h, m = map(int, start_time_str.split(':'))
                 class_time = now.replace(hour=h, minute=m, second=0)
                 if class_time > now:
-                    return get_msg("start.next_class", language=language, time=start_time_str, subject=item['name'])
+                    return get_msg("start.next_class", language=language, time=start_time_str,
+                                   subject=lesson_html(item))
             except Exception:
                 pass
         return get_msg("start.no_more_classes", language=language)
@@ -329,7 +331,7 @@ class ScheduleBotHandlers:
                         InlineKeyboardButton(text=get_msg("keyboard.get_file", language=language), callback_data=f"send_pdf:{pdf_key}")
                     ])
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
 
         return text, self.get_schedule_nav_keyboard(offset, pdf_buttons, language)
 
@@ -368,7 +370,7 @@ class ScheduleBotHandlers:
                 has_any_classes = True
                 text += f"🔹 <b>{weekdays[i]} ({current_date.strftime('%d.%m')}):</b>\n"
                 for item in day_classes:
-                    text += f"  ⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    text += f"  ⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
                 text += "\n"
 
         if not has_any_classes:
@@ -419,6 +421,7 @@ class ScheduleBotHandlers:
                         name=message.from_user.first_name, group=user['group_name'],
                         next_class=next_class),
                 parse_mode="HTML",
+                disable_web_page_preview=True,
                 reply_markup=self.get_main_keyboard(language)
             )
             await state.update_data(last_ui_msg_id=msg.message_id)
@@ -924,6 +927,7 @@ class ScheduleBotHandlers:
             get_msg("start.main_menu_title", language=language,
                     group=user['group_name'], next_class=next_class),
             parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=self.get_main_keyboard(language))
         await callback.answer()
 
@@ -1003,7 +1007,7 @@ class ScheduleBotHandlers:
                         has_pdf = True
                     text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
             await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
         else:
             await callback.message.answer("Пар на завтра немає (результат тесту).")

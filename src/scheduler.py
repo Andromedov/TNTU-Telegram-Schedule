@@ -11,6 +11,7 @@ from html import escape
 from datetime import datetime, timedelta
 from messages import get_msg, normalize_language
 from reminder_utils import KYIV_TZ, kyiv_now, notifications_are_muted
+from schedule_formatting import lesson_html
 
 
 GROUP_CHECK_CONCURRENCY = 8
@@ -69,6 +70,54 @@ def _format_reminder_offset(offset: int, language: str) -> str:
 def _reminder_job_id(user_id: int, group_name: str, class_time: datetime, subject_name: str) -> str:
     subject_hash = hashlib.sha256(subject_name.encode("utf-8")).hexdigest()[:12]
     return f"class-reminder:{user_id}:{group_name}:{class_time.strftime('%Y%m%d%H%M')}:{subject_hash}"
+
+
+def _format_schedule_changes(changes: list, language: str) -> str:
+    weekdays = get_msg("schedule.weekdays", language=language).split("|")
+    lines = [get_msg("schedule.changed", language=language), ""]
+    truncated = False
+
+    for change in changes:
+        lesson = change['lesson']
+        weekday_index = int(lesson.get('weekday', 0))
+        weekday = weekdays[weekday_index] if 0 <= weekday_index < len(weekdays) else str(weekday_index + 1)
+        context = get_msg(
+            "schedule.change_context",
+            language=language,
+            weekday=weekday,
+            week=lesson.get('week', '?'),
+            time=lesson.get('time', '?'),
+        )
+        subject = lesson_html(lesson)
+        key = {
+            'added': 'schedule.change_added',
+            'removed': 'schedule.change_removed',
+            'changed': 'schedule.change_updated',
+        }.get(change.get('kind'), 'schedule.change_updated')
+        block = [get_msg(key, language=language, subject=subject), f"<i>{escape(context)}</i>"]
+
+        for field, values in change.get('fields', {}).items():
+            label = get_msg(f"schedule.change_fields.{field}", default=field, language=language)
+            empty = get_msg("schedule.change_none", language=language)
+            old_value = escape(str(values.get('old') or empty))
+            new_value = escape(str(values.get('new') or empty))
+            block.append("  • " + get_msg(
+                "schedule.change_value",
+                language=language,
+                field=escape(label),
+                old=old_value,
+                new=new_value,
+            ))
+
+        candidate = "\n".join([*lines, *block, ""])
+        if len(candidate) > 3800:
+            truncated = True
+            break
+        lines.extend([*block, ""])
+
+    if truncated:
+        lines.append(f"<i>{escape(get_msg('schedule.change_truncated', language=language))}</i>")
+    return "\n".join(lines).rstrip()
 
 
 async def is_active_study_period(target_date: datetime) -> bool:
@@ -268,7 +317,7 @@ async def send_evening_schedule(bot: Bot):
                         has_pdf = True
                     text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {item['name']}\n"
+                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
             try:
                 await bot.send_message(
                     user['user_id'],
@@ -281,7 +330,7 @@ async def send_evening_schedule(bot: Bot):
                 logging.error(f"Не вдалося відправити повідомлення користувачу {user['user_id']}: {e}")
 
 
-async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, scheduled_group: str, offset: int):
+async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, scheduled_group: str, offset: int):
     """Відправляє нагадування про конкретну пару."""
     user = await db.get_user(user_id)
 
@@ -295,14 +344,16 @@ async def send_class_reminder(bot: Bot, user_id: int, subject_name: str, schedul
     language = normalize_language(user_dict.get("language"))
     time_str = _format_reminder_offset(offset, language)
 
+    subject_html = lesson_html(lesson) if isinstance(lesson, dict) else escape(lesson)
     text = get_msg("reminders.class_starts", language=language,
-                   time_str=time_str, subject_name=escape(subject_name))
+                   time_str=time_str, subject_name=subject_html)
 
     try:
         await bot.send_message(
             user_id,
             text,
             parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=_get_reminder_keyboard(language)
         )
     except Exception as e:
@@ -343,7 +394,7 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
                             send_class_reminder,
                             'date',
                             run_date=reminder_time,
-                            args=[bot, uid, item['name'], group_name, offset],
+                            args=[bot, uid, item, group_name, offset],
                             id=_reminder_job_id(uid, group_name, class_time, item['name']),
                             replace_existing=True,
                         )
@@ -387,7 +438,7 @@ async def send_morning_digest(bot: Bot, digest_hour: int):
             text = get_msg("reminders.digest_title", language=language, group=escape(group_name)) + "\n"
             if classes:
                 for item in classes:
-                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {escape(str(item['name']))}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item)}\n"
             else:
                 text += get_msg("reminders.digest_empty", language=language)
             try:
@@ -415,19 +466,20 @@ async def check_schedule_updates_task(bot: Bot):
             groups[g].append(user)
 
     for group_name, group_users in groups.items():
-        has_changes = await scraper.check_schedule_changes(group_name)
-        if has_changes:
+        changes = await scraper.get_schedule_changes(group_name)
+        if changes:
             for user in group_users:
                 language = normalize_language(dict(user).get("language"))
                 try:
                     await bot.send_message(
                         user['user_id'],
-                        get_msg("schedule.changed", language=language),
+                        _format_schedule_changes(changes, language),
                         parse_mode="HTML",
                         reply_markup=_get_dismiss_keyboard(language)
                     )
-                except:
-                    pass
+                except Exception as error:
+                    logging.warning("Не вдалося повідомити %s про зміну розкладу: %s",
+                                    user['user_id'], error)
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
