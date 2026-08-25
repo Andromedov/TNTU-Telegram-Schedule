@@ -74,7 +74,7 @@ source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Start the bot
-python src/main.py
+python src/app.py
 ```
 
 ## 📁 Project Structure
@@ -82,29 +82,26 @@ python src/main.py
 ```text
 TNTU-Telegram-Schedule/
 ├── src/
-│   ├── main.py                # Application entry point and lifecycle
-│   ├── handlers.py            # Compatibility facade and route registration
-│   ├── bot_handlers/          # Commands, schedules, campus, settings, and admin flows
-│   ├── scraper.py             # Compatibility facade, cache, and public scraper API
-│   ├── tntu_schedule/         # Schedule parsing and snapshot comparison
-│   ├── scheduler.py           # Compatibility facade and job registration
-│   ├── background_jobs/       # Notifications, formatting, and group promotion
-│   ├── http_client.py         # Shared HTTP session, retries, and rate limits
-│   ├── database.py            # SQLite database operations
-│   ├── messages.py            # Localization loading and locale fallback
-│   └── messages.json          # Localization and UI text
+│   ├── app.py                # Application entry point and lifecycle
+│   ├── config.py             # Environment-backed configuration
+│   ├── bot/                  # Telegram routes, handlers, keyboards, and calendar UI
+│   ├── schedule/             # TNTU access, parsing, formatting, sharing, and ICS
+│   ├── jobs/                 # Scheduled notifications and group promotion
+│   ├── infrastructure/       # SQLite and shared HTTP client
+│   ├── campus/               # Building directory and location helpers
+│   └── i18n/                 # Localization loader and message catalog
 ├── data/                    # Automatically generated (DB & caches)
 ├── .env.example             # Environment variables template
 ├── docker-compose.yml       
 └── Dockerfile
 ```
 
-The three facade modules preserve the existing import API while feature code is grouped by responsibility. This keeps the application entry point and integrations stable during incremental migration.
+Feature modules use imports rooted at `src`, so local runs, tests, and Docker resolve the same code paths without an additional package wrapper.
 
 ## 📝 Localization
 The bot supports Ukrainian (`uk`) and English (`en`). Users can switch language in **Settings → Language**, and the preference is stored in SQLite. New users start with English when Telegram reports an English locale; all other or unknown locales fall back to Ukrainian.
 
-Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/messages.json`. Missing English keys automatically fall back to Ukrainian.
+Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/i18n/messages.json`. Missing English keys automatically fall back to Ukrainian.
 
 ## 📜 License
 

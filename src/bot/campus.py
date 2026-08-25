@@ -1,8 +1,8 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-from campus import building_card
-from messages import get_msg
+from campus.directory import building_card
+from i18n.messages import get_msg
 
 
 class CampusHandlerMixin:

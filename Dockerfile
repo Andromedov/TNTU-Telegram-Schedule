@@ -14,4 +14,4 @@ COPY . .
 
 RUN mkdir -p data
 
-CMD ["python", "src/main.py"]
+CMD ["python", "src/app.py"]

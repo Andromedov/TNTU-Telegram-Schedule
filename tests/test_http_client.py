@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from http_client import HttpClient, HttpRequestError  # noqa: E402
+from infrastructure.http_client import HttpClient, HttpRequestError  # noqa: E402
 
 
 class FakeResponse:

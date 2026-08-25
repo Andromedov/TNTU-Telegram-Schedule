@@ -1,25 +1,25 @@
-"""Compatibility facade and router composition for Telegram handlers."""
+"""Composition root for Telegram handlers and routes."""
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # These module exports remain available for integrations and older tests.
-import database as db
-import scraper
-from bot_handlers.admin import AdminHandlerMixin
-from bot_handlers.base import HandlerBaseMixin
-from bot_handlers.campus import CampusHandlerMixin
-from bot_handlers.common import (
+from infrastructure import database as db
+from schedule import service as scraper
+from bot.admin import AdminHandlerMixin
+from bot.base import HandlerBaseMixin
+from bot.campus import CampusHandlerMixin
+from bot.common import (
     UserState,
     get_pdf_key as _get_pdf_key,
     ics_cooldown as _ics_cooldown,
     pdf_cache as _pdf_cache,
 )
-from bot_handlers.keyboards import KeyboardMixin
-from bot_handlers.lifecycle import LifecycleHandlerMixin
-from bot_handlers.schedule import ScheduleHandlerMixin
-from bot_handlers.settings import SettingsHandlerMixin
+from bot.keyboards import KeyboardMixin
+from bot.lifecycle import LifecycleHandlerMixin
+from bot.schedule import ScheduleHandlerMixin
+from bot.settings import SettingsHandlerMixin
 
 
 class ScheduleBotHandlers(

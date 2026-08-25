@@ -1,6 +1,6 @@
 import calendar
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from messages import get_msg
+from i18n.messages import get_msg
 
 
 def get_calendar_keyboard(year: int, month: int, language: str = "uk") -> InlineKeyboardMarkup:

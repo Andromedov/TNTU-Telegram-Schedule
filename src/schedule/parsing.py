@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup, Tag
 
-from schedule_formatting import normalize_atutor_url
+from schedule.formatting import normalize_atutor_url
 
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"

@@ -1,11 +1,11 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-import database as db
-import scraper
-from bot_handlers.common import UserState
+from infrastructure import database as db
+from schedule import service as scraper
+from bot.common import UserState
 from config import SENIOR_ID
-from messages import get_html_msg, get_msg, trusted_html
+from i18n.messages import get_html_msg, get_msg, trusted_html
 
 
 class LifecycleHandlerMixin:

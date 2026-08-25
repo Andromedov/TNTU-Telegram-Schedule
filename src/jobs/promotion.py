@@ -4,10 +4,10 @@ import re
 
 from aiogram import Bot
 
-import database as db
-import scraper
-from background_jobs.formatting import get_dismiss_keyboard
-from messages import get_html_msg, normalize_language
+from infrastructure import database as db
+from schedule import service as scraper
+from jobs.formatting import get_dismiss_keyboard
+from i18n.messages import get_html_msg, normalize_language
 
 
 GROUP_CHECK_CONCURRENCY = 8

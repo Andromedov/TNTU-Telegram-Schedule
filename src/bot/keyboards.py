@@ -1,9 +1,9 @@
 from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot_handlers.common import user_language
-from campus import BUILDINGS, CAMPUS_MAP_URL
-from messages import get_msg
-from reminder_utils import REMINDER_LESSON_TYPES, temporary_notifications_are_muted
+from bot.common import user_language
+from campus.directory import BUILDINGS, CAMPUS_MAP_URL
+from i18n.messages import get_msg
+from jobs.reminders import REMINDER_LESSON_TYPES, temporary_notifications_are_muted
 
 
 class KeyboardMixin:

@@ -7,15 +7,15 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-import database as db
-import scraper
-from bot_handlers.common import get_pdf_key, ics_cooldown
-from calendar_ui import get_calendar_keyboard
-from campus import schedule_buildings
-from ics_generator import generate_week_ics
-from messages import get_html_msg, get_msg, trusted_html
-from schedule_formatting import lesson_html
-from schedule_sharing import build_day_share, build_week_share, get_share_message_keyboard
+from infrastructure import database as db
+from schedule import service as scraper
+from bot.common import get_pdf_key, ics_cooldown
+from bot.calendar import get_calendar_keyboard
+from campus.directory import schedule_buildings
+from schedule.ics import generate_week_ics
+from i18n.messages import get_html_msg, get_msg, trusted_html
+from schedule.formatting import lesson_html
+from schedule.sharing import build_day_share, build_week_share, get_share_message_keyboard
 
 
 class ScheduleHandlerMixin:

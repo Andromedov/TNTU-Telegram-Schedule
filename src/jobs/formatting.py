@@ -4,8 +4,8 @@ from html import escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from messages import get_html_msg, get_msg, trusted_html
-from schedule_formatting import lesson_html
+from i18n.messages import get_html_msg, get_msg, trusted_html
+from schedule.formatting import lesson_html
 
 
 def get_dismiss_keyboard(language: str = "uk") -> InlineKeyboardMarkup:

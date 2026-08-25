@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-import database  # noqa: E402
+from infrastructure import database  # noqa: E402
 
 
 class DatabaseTests(unittest.IsolatedAsyncioTestCase):

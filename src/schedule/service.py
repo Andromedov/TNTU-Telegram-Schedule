@@ -1,4 +1,4 @@
-"""Compatibility facade for TNTU schedule access and snapshot persistence."""
+"""Public TNTU schedule access, caching, and snapshot persistence."""
 
 import asyncio
 import json
@@ -11,9 +11,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from bs4 import BeautifulSoup, Tag
 
-from http_client import HttpRequestError, http_client
-from tntu_schedule.diff import compare_schedule_snapshots, lesson_identity
-from tntu_schedule.parsing import (
+from infrastructure.http_client import HttpRequestError, http_client
+from schedule.diff import compare_schedule_snapshots, lesson_identity
+from schedule.parsing import (
     TNTU_SCHEDULE_URL,
     build_schedule_grid,
     extract_semester_start,

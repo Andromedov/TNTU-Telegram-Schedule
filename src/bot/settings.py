@@ -3,10 +3,10 @@ from datetime import timedelta
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-import database as db
-from messages import get_msg, normalize_language
-from reminder_utils import REMINDER_LESSON_TYPES, kyiv_now, muted_until_tomorrow
-from scheduler import send_snoozed_reminder
+from infrastructure import database as db
+from i18n.messages import get_msg, normalize_language
+from jobs.reminders import REMINDER_LESSON_TYPES, kyiv_now, muted_until_tomorrow
+from jobs.scheduler import send_snoozed_reminder
 
 
 class SettingsHandlerMixin:

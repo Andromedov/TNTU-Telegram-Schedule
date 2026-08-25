@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from schedule_formatting import html_link, lesson_html, lesson_plain_text, normalize_atutor_url  # noqa: E402
+from schedule.formatting import html_link, lesson_html, lesson_plain_text, normalize_atutor_url  # noqa: E402
 
 
 class ScheduleFormattingTests(unittest.TestCase):

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from aiogram.fsm.state import State, StatesGroup
 
-from messages import normalize_language
+from i18n.messages import normalize_language
 
 
 pdf_cache: dict[str, str] = {}

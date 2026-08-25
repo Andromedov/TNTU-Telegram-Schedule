@@ -1,22 +1,22 @@
-"""Compatibility facade and APScheduler configuration for background jobs."""
+"""APScheduler configuration and public background-job API."""
 
-# These imports remain public for existing integrations and tests.
+# Re-export job functions from one scheduling boundary.
 import asyncio
-import database as db
-import scraper
+from infrastructure import database as db
+from schedule import service as scraper
 
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from reminder_utils import kyiv_now
+from jobs.reminders import kyiv_now
 
-from background_jobs.formatting import (
+from jobs.formatting import (
     format_reminder_offset as _format_reminder_offset,
     format_schedule_changes as _format_schedule_changes,
     get_dismiss_keyboard as _get_dismiss_keyboard,
     get_reminder_keyboard as _get_reminder_keyboard,
     reminder_job_id as _reminder_job_id,
 )
-from background_jobs.notifications import (
+from jobs.notifications import (
     check_schedule_updates_task,
     is_active_study_period,
     schedule_daily_reminders as _schedule_daily_reminders,
@@ -25,7 +25,7 @@ from background_jobs.notifications import (
     send_morning_digest,
     send_snoozed_reminder,
 )
-from background_jobs.promotion import (
+from jobs.promotion import (
     GROUP_CHECK_CONCURRENCY,
     GROUP_CHECK_FAILED,
     next_group_candidate as _next_group_candidate,

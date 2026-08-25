@@ -5,18 +5,18 @@ from html import escape
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-import database as db
-import scraper
-from background_jobs.formatting import (
+from infrastructure import database as db
+from schedule import service as scraper
+from jobs.formatting import (
     format_reminder_offset,
     format_schedule_changes,
     get_dismiss_keyboard,
     get_reminder_keyboard,
     reminder_job_id,
 )
-from messages import get_html_msg, get_msg, normalize_language, trusted_html
-from reminder_utils import kyiv_now, notifications_are_muted, reminder_enabled_for_lesson
-from schedule_formatting import html_link, lesson_html
+from i18n.messages import get_html_msg, get_msg, normalize_language, trusted_html
+from jobs.reminders import kyiv_now, notifications_are_muted, reminder_enabled_for_lesson
+from schedule.formatting import html_link, lesson_html
 
 
 async def is_active_study_period(target_date: datetime) -> bool:

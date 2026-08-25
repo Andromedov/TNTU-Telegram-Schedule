@@ -1,9 +1,9 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-import database as db
-from bot_handlers.common import user_language
-from messages import get_msg
+from infrastructure import database as db
+from bot.common import user_language
+from i18n.messages import get_msg
 
 
 class HandlerBaseMixin:

@@ -3,8 +3,8 @@ from html import escape
 
 from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
-from messages import get_msg
-from schedule_formatting import lesson_html, lesson_plain_text
+from i18n.messages import get_msg
+from schedule.formatting import lesson_html, lesson_plain_text
 
 
 TELEGRAM_MESSAGE_LIMIT = 4096

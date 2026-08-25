@@ -2,13 +2,13 @@ from html import escape
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-import database as db
-import scraper
-from bot_handlers.common import pdf_cache
+from infrastructure import database as db
+from schedule import service as scraper
+from bot.common import pdf_cache
 from config import SENIOR_ID
-from messages import get_html_msg, get_msg
-from schedule_formatting import html_link, lesson_html
-from scheduler import promote_groups_dry_run
+from i18n.messages import get_html_msg, get_msg
+from schedule.formatting import html_link, lesson_html
+from jobs.scheduler import promote_groups_dry_run
 
 
 class AdminHandlerMixin:
