@@ -74,7 +74,7 @@ source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Start the bot
-python src/app.py
+python src/main.py
 ```
 
 ## 📁 Project Structure
@@ -82,7 +82,7 @@ python src/app.py
 ```text
 TNTU-Telegram-Schedule/
 ├── src/
-│   ├── app.py                # Application entry point and lifecycle
+│   ├── main.py               # Application entry point and lifecycle
 │   ├── config.py             # Environment-backed configuration
 │   ├── bot/                  # Telegram routes, handlers, keyboards, and calendar UI
 │   ├── schedule/             # TNTU access, parsing, formatting, sharing, and ICS
