@@ -71,6 +71,54 @@ def _reminder_job_id(user_id: int, group_name: str, class_time: datetime, subjec
     return f"class-reminder:{user_id}:{group_name}:{class_time.strftime('%Y%m%d%H%M')}:{subject_hash}"
 
 
+def _format_schedule_changes(changes: list, language: str) -> str:
+    weekdays = get_msg("schedule.weekdays", language=language).split("|")
+    lines = [get_msg("schedule.changed", language=language), ""]
+    truncated = False
+
+    for change in changes:
+        lesson = change['lesson']
+        weekday_index = int(lesson.get('weekday', 0))
+        weekday = weekdays[weekday_index] if 0 <= weekday_index < len(weekdays) else str(weekday_index + 1)
+        context = get_msg(
+            "schedule.change_context",
+            language=language,
+            weekday=weekday,
+            week=lesson.get('week', '?'),
+            time=lesson.get('time', '?'),
+        )
+        subject = escape(str(lesson.get('subject') or lesson.get('name') or '?'))
+        key = {
+            'added': 'schedule.change_added',
+            'removed': 'schedule.change_removed',
+            'changed': 'schedule.change_updated',
+        }.get(change.get('kind'), 'schedule.change_updated')
+        block = [get_msg(key, language=language, subject=subject), f"<i>{escape(context)}</i>"]
+
+        for field, values in change.get('fields', {}).items():
+            label = get_msg(f"schedule.change_fields.{field}", default=field, language=language)
+            empty = get_msg("schedule.change_none", language=language)
+            old_value = escape(str(values.get('old') or empty))
+            new_value = escape(str(values.get('new') or empty))
+            block.append("  • " + get_msg(
+                "schedule.change_value",
+                language=language,
+                field=escape(label),
+                old=old_value,
+                new=new_value,
+            ))
+
+        candidate = "\n".join([*lines, *block, ""])
+        if len(candidate) > 3800:
+            truncated = True
+            break
+        lines.extend([*block, ""])
+
+    if truncated:
+        lines.append(f"<i>{escape(get_msg('schedule.change_truncated', language=language))}</i>")
+    return "\n".join(lines).rstrip()
+
+
 async def is_active_study_period(target_date: datetime) -> bool:
     """Перевіряє, чи припадає дата на період активного навчання."""
     semester_dates = await scraper.get_semester_dates()
@@ -415,19 +463,20 @@ async def check_schedule_updates_task(bot: Bot):
             groups[g].append(user)
 
     for group_name, group_users in groups.items():
-        has_changes = await scraper.check_schedule_changes(group_name)
-        if has_changes:
+        changes = await scraper.get_schedule_changes(group_name)
+        if changes:
             for user in group_users:
                 language = normalize_language(dict(user).get("language"))
                 try:
                     await bot.send_message(
                         user['user_id'],
-                        get_msg("schedule.changed", language=language),
+                        _format_schedule_changes(changes, language),
                         parse_mode="HTML",
                         reply_markup=_get_dismiss_keyboard(language)
                     )
-                except:
-                    pass
+                except Exception as error:
+                    logging.warning("Не вдалося повідомити %s про зміну розкладу: %s",
+                                    user['user_id'], error)
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:

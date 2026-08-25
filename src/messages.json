@@ -39,7 +39,19 @@
       "weekdays": "Понеділок|Вівторок|Середа|Четвер|П'ятниця|Субота|Неділя",
       "today_relative": " (Сьогодні)", "tomorrow_relative": " (Завтра)", "yesterday_relative": " (Вчора)",
       "evening_title": "🌙 <b>Розклад на завтра:</b>\n",
-      "changed": "⚠️ <b>Увага!</b> Розклад для вашої групи був змінений на сайті ТНТУ!",
+      "changed": "⚠️ <b>Розклад змінено</b>",
+      "change_context": "{weekday}, {week}-й тиждень, {time}",
+      "change_added": "➕ <b>Додано:</b> {subject}",
+      "change_removed": "➖ <b>Скасовано:</b> {subject}",
+      "change_updated": "✏️ <b>Змінено:</b> {subject}",
+      "change_value": "{field}: {old} → {new}",
+      "change_none": "не вказано",
+      "change_truncated": "…інші зміни не показано через ліміт Telegram.",
+      "change_fields": {
+        "subject": "Назва", "time": "Час", "lesson_type": "Тип заняття",
+        "building": "Корпус", "room": "Аудиторія", "location": "Місце",
+        "atutor_url": "ATutor", "notes": "Примітка"
+      },
       "ask_date": "📅 <b>Оберіть потрібну дату:</b>\nВикористовуйте календар нижче або швидкі кнопки.",
       "truncated": "<i>... (частину розкладу приховано через ліміт Telegram)</i>",
       "updated": "🔄 Оновлено!", "current": "✅ Розклад актуальний."
@@ -128,7 +140,19 @@
       "week_header": "🗓 <b>Weekly schedule ({start} - {end})</b>\n🎓 Group: <b>{group}</b>\n\n",
       "weekdays": "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday",
       "today_relative": " (Today)", "tomorrow_relative": " (Tomorrow)", "yesterday_relative": " (Yesterday)",
-      "evening_title": "🌙 <b>Tomorrow's schedule:</b>\n", "changed": "⚠️ <b>Attention!</b> Your group's schedule has changed on the TNTU website!",
+      "evening_title": "🌙 <b>Tomorrow's schedule:</b>\n", "changed": "⚠️ <b>Schedule updated</b>",
+      "change_context": "{weekday}, week {week}, {time}",
+      "change_added": "➕ <b>Added:</b> {subject}",
+      "change_removed": "➖ <b>Cancelled:</b> {subject}",
+      "change_updated": "✏️ <b>Changed:</b> {subject}",
+      "change_value": "{field}: {old} → {new}",
+      "change_none": "not specified",
+      "change_truncated": "…more changes were hidden due to Telegram's limit.",
+      "change_fields": {
+        "subject": "Name", "time": "Time", "lesson_type": "Class type",
+        "building": "Building", "room": "Room", "location": "Location",
+        "atutor_url": "ATutor", "notes": "Note"
+      },
       "ask_date": "📅 <b>Choose a date:</b>\nUse the calendar or the quick buttons below.", "truncated": "<i>... (part of the schedule was hidden due to Telegram's limit)</i>",
       "updated": "🔄 Updated!", "current": "✅ Schedule is up to date."
     },
