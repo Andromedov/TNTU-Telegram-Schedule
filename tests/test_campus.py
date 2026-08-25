@@ -5,11 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
+from bot import router as handlers  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
 from campus.directory import (  # noqa: E402
     BUILDINGS,
     CAMPUS_MAP_URL,
@@ -17,8 +18,6 @@ from campus.directory import (  # noqa: E402
     building_number,
     schedule_buildings,
 )
-from bot import router as handlers  # noqa: E402
-from bot.router import ScheduleBotHandlers  # noqa: E402
 
 
 class CampusDirectoryTests(unittest.TestCase):
@@ -33,10 +32,20 @@ class CampusDirectoryTests(unittest.TestCase):
         self.assertEqual(2, building_number("К2"))
         self.assertEqual(10, building_number("K10"))
         self.assertIsNone(building_number("ATutor"))
-        self.assertEqual([1, 2, 10], schedule_buildings([[
-            {"building": "К2"}, {"building": "K10"}, {"building": "К1"},
-            {"building": "К2"}, {"building": None},
-        ]]))
+        self.assertEqual(
+            [1, 2, 10],
+            schedule_buildings(
+                [
+                    [
+                        {"building": "К2"},
+                        {"building": "K10"},
+                        {"building": "К1"},
+                        {"building": "К2"},
+                        {"building": None},
+                    ]
+                ]
+            ),
+        )
 
     def test_building_card_is_localized(self):
         ukrainian = building_card(2, "uk")
@@ -57,9 +66,7 @@ class CampusKeyboardTests(unittest.TestCase):
 
     def test_main_menu_contains_campus_entry(self):
         keyboard = ScheduleBotHandlers.get_main_keyboard("en")
-        callbacks = {
-            button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data
-        }
+        callbacks = {button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data}
         self.assertIn("show_campus", callbacks)
 
     def test_directory_keyboard_contains_buildings_map_and_back(self):
@@ -80,8 +87,10 @@ class CampusKeyboardTests(unittest.TestCase):
 
 class CampusHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_campus_command_works_without_registered_group(self):
-        router = SimpleNamespace(message=SimpleNamespace(register=lambda *args, **kwargs: None),
-                                 callback_query=SimpleNamespace(register=lambda *args, **kwargs: None))
+        router = SimpleNamespace(
+            message=SimpleNamespace(register=lambda *args, **kwargs: None),
+            callback_query=SimpleNamespace(register=lambda *args, **kwargs: None),
+        )
         handler = ScheduleBotHandlers(router)
         sent_message = SimpleNamespace(message_id=99)
         message = SimpleNamespace(
@@ -103,8 +112,10 @@ class CampusHandlerTests(unittest.IsolatedAsyncioTestCase):
         state.set_state.assert_awaited_once_with(None)
 
     async def test_building_callback_shows_localized_card(self):
-        router = SimpleNamespace(message=SimpleNamespace(register=lambda *args, **kwargs: None),
-                                 callback_query=SimpleNamespace(register=lambda *args, **kwargs: None))
+        router = SimpleNamespace(
+            message=SimpleNamespace(register=lambda *args, **kwargs: None),
+            callback_query=SimpleNamespace(register=lambda *args, **kwargs: None),
+        )
         handler = ScheduleBotHandlers(router)
         callback = SimpleNamespace(
             data="campus_building:10",
@@ -122,8 +133,10 @@ class CampusHandlerTests(unittest.IsolatedAsyncioTestCase):
         callback.answer.assert_awaited_once()
 
     async def test_daily_schedule_shows_only_relevant_building_shortcuts(self):
-        router = SimpleNamespace(message=SimpleNamespace(register=lambda *args, **kwargs: None),
-                                 callback_query=SimpleNamespace(register=lambda *args, **kwargs: None))
+        router = SimpleNamespace(
+            message=SimpleNamespace(register=lambda *args, **kwargs: None),
+            callback_query=SimpleNamespace(register=lambda *args, **kwargs: None),
+        )
         handler = ScheduleBotHandlers(router)
         schedule = [
             {"time": "08:00-09:20", "name": "Online", "building": None, "is_pdf": False},
@@ -132,23 +145,31 @@ class CampusHandlerTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         with (
-            patch.object(handlers.db, "get_user", new=AsyncMock(return_value={
-                "user_id": 1, "group_name": "СТ-11", "language": "en",
-            })),
+            patch.object(
+                handlers.db,
+                "get_user",
+                new=AsyncMock(
+                    return_value={
+                        "user_id": 1,
+                        "group_name": "СТ-11",
+                        "language": "en",
+                    }
+                ),
+            ),
             patch.object(handlers.scraper, "_get_schedule_for_date", new=AsyncMock(return_value=schedule)),
         ):
             _, keyboard = await handler._generate_schedule_ui(1, 0)
 
-        callbacks = {
-            button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data
-        }
+        callbacks = {button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data}
         self.assertIn("campus_building:2:nav_schedule:0", callbacks)
         self.assertIn("campus_building:10:nav_schedule:0", callbacks)
         self.assertNotIn("campus_building:1", callbacks)
 
     async def test_context_building_callback_returns_to_original_schedule(self):
-        router = SimpleNamespace(message=SimpleNamespace(register=lambda *args, **kwargs: None),
-                                 callback_query=SimpleNamespace(register=lambda *args, **kwargs: None))
+        router = SimpleNamespace(
+            message=SimpleNamespace(register=lambda *args, **kwargs: None),
+            callback_query=SimpleNamespace(register=lambda *args, **kwargs: None),
+        )
         handler = ScheduleBotHandlers(router)
         callback = SimpleNamespace(
             data="campus_building:2:nav_week:-1",
@@ -161,7 +182,5 @@ class CampusHandlerTests(unittest.IsolatedAsyncioTestCase):
             await handler.process_campus_building(callback)
 
         keyboard = callback.message.edit_text.await_args.kwargs["reply_markup"]
-        callbacks = {
-            button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data
-        }
+        callbacks = {button.callback_data for row in keyboard.inline_keyboard for button in row if button.callback_data}
         self.assertIn("nav_week:-1", callbacks)

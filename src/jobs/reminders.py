@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from typing import Mapping, Any
+from typing import Any, Mapping
 from zoneinfo import ZoneInfo
-
 
 KYIV_TZ = ZoneInfo("Europe/Kyiv")
 
@@ -44,9 +43,11 @@ def temporary_notifications_are_muted(user_data: Mapping[str, Any], now: datetim
 
 
 def notifications_are_muted(user_data: Mapping[str, Any], now: datetime | None = None) -> bool:
-    return (bool(user_data.get("is_paused"))
-            or temporary_notifications_are_muted(user_data, now)
-            or quiet_hours_are_active(user_data, now))
+    return (
+        bool(user_data.get("is_paused"))
+        or temporary_notifications_are_muted(user_data, now)
+        or quiet_hours_are_active(user_data, now)
+    )
 
 
 def quiet_hours_are_active(user_data: Mapping[str, Any], now: datetime | None = None) -> bool:

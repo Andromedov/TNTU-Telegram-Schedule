@@ -15,19 +15,16 @@ def compare_schedule_snapshots(old: list, new: list) -> list:
             for field in ("lesson_type", "building", "room", "atutor_url", "notes")
             if before.get(field) != after.get(field)
         }
-        if (before.get("location") != after.get("location")
-                and not any(field in fields for field in ("building", "room"))):
-            fields["location"] = {
-                "old": before.get("location"), "new": after.get("location")
-            }
+        if before.get("location") != after.get("location") and not any(
+            field in fields for field in ("building", "room")
+        ):
+            fields["location"] = {"old": before.get("location"), "new": after.get("location")}
         return fields
 
     unmatched_new = list(new)
     changes = []
     for old_lesson in old:
-        exact = next((
-            item for item in unmatched_new if lesson_identity(item) == lesson_identity(old_lesson)
-        ), None)
+        exact = next((item for item in unmatched_new if lesson_identity(item) == lesson_identity(old_lesson)), None)
         if exact is not None:
             unmatched_new.remove(exact)
             fields = changed_details(old_lesson, exact)
@@ -36,13 +33,12 @@ def compare_schedule_snapshots(old: list, new: list) -> list:
             continue
 
         moved_candidates = [
-            item for item in unmatched_new
-            if lesson_identity(item, include_time=False)
-            == lesson_identity(old_lesson, include_time=False)
+            item
+            for item in unmatched_new
+            if lesson_identity(item, include_time=False) == lesson_identity(old_lesson, include_time=False)
         ]
         moved = next(
-            (item for item in moved_candidates
-             if item.get("lesson_type") == old_lesson.get("lesson_type")),
+            (item for item in moved_candidates if item.get("lesson_type") == old_lesson.get("lesson_type")),
             moved_candidates[0] if moved_candidates else None,
         )
         if moved is not None:
@@ -52,18 +48,24 @@ def compare_schedule_snapshots(old: list, new: list) -> list:
             changes.append({"kind": "changed", "lesson": moved, "fields": fields})
             continue
 
-        same_slot = next((
-            item for item in unmatched_new
-            if (item.get("week"), item.get("weekday"), item.get("time"))
-            == (old_lesson.get("week"), old_lesson.get("weekday"), old_lesson.get("time"))
-        ), None)
+        same_slot = next(
+            (
+                item
+                for item in unmatched_new
+                if (item.get("week"), item.get("weekday"), item.get("time"))
+                == (old_lesson.get("week"), old_lesson.get("weekday"), old_lesson.get("time"))
+            ),
+            None,
+        )
         if same_slot is not None:
             unmatched_new.remove(same_slot)
-            changes.append({"kind": "changed", "lesson": same_slot, "fields": {
-                "subject": {
-                    "old": old_lesson.get("subject"), "new": same_slot.get("subject")
+            changes.append(
+                {
+                    "kind": "changed",
+                    "lesson": same_slot,
+                    "fields": {"subject": {"old": old_lesson.get("subject"), "new": same_slot.get("subject")}},
                 }
-            }})
+            )
         else:
             changes.append({"kind": "removed", "lesson": old_lesson})
 

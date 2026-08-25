@@ -8,14 +8,12 @@ from unittest.mock import AsyncMock, patch
 
 from bs4 import BeautifulSoup
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from schedule import service as scraper  # noqa: E402
 from infrastructure.http_client import HttpTextResponse  # noqa: E402
-
+from schedule import service as scraper  # noqa: E402
 
 FIXTURE = (ROOT / "tests" / "fixtures" / "schedule_week.html").read_text(encoding="utf-8")
 
@@ -30,8 +28,10 @@ class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(FIXTURE, html)
         request.assert_awaited_once_with(
-            "POST", scraper.TNTU_SCHEDULE_URL,
-            params={"p": "uk/schedule"}, data={"group": "Тестова група"},
+            "POST",
+            scraper.TNTU_SCHEDULE_URL,
+            params={"p": "uk/schedule"},
+            data={"group": "Тестова група"},
         )
 
     def test_builds_real_group_slug_and_rejects_another_groups_table(self):
@@ -70,16 +70,34 @@ class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
 
 class ScheduleDiffTests(unittest.TestCase):
     def test_reports_time_room_type_and_atutor_changes(self):
-        old = [{
-            "week": 1, "weekday": 0, "time": "8:00-9:20", "subject": "Algorithms",
-            "lesson_type": "lecture", "building": "К2", "room": "63", "location": "К2-63",
-            "atutor_url": "https://old", "notes": None,
-        }]
-        new = [{
-            "week": 1, "weekday": 0, "time": "9:30-10:50", "subject": "Algorithms",
-            "lesson_type": "laboratory", "building": "К1", "room": "703", "location": "К1-703",
-            "atutor_url": "https://new", "notes": None,
-        }]
+        old = [
+            {
+                "week": 1,
+                "weekday": 0,
+                "time": "8:00-9:20",
+                "subject": "Algorithms",
+                "lesson_type": "lecture",
+                "building": "К2",
+                "room": "63",
+                "location": "К2-63",
+                "atutor_url": "https://old",
+                "notes": None,
+            }
+        ]
+        new = [
+            {
+                "week": 1,
+                "weekday": 0,
+                "time": "9:30-10:50",
+                "subject": "Algorithms",
+                "lesson_type": "laboratory",
+                "building": "К1",
+                "room": "703",
+                "location": "К1-703",
+                "atutor_url": "https://new",
+                "notes": None,
+            }
+        ]
 
         changes = scraper._compare_schedule_snapshots(old, new)
 

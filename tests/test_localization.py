@@ -3,7 +3,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
@@ -21,14 +20,16 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("Налаштування", get_msg("settings.title", language="de-DE"))
 
     def test_settings_keyboard_uses_saved_language(self):
-        keyboard = ScheduleBotHandlers.get_settings_keyboard({
-            "language": "en",
-            "notify_10_min": 1,
-            "reminder_offset": 15,
-            "notify_evening": 1,
-            "is_paused": 0,
-            "notify_schedule_update": 1,
-        })
+        keyboard = ScheduleBotHandlers.get_settings_keyboard(
+            {
+                "language": "en",
+                "notify_10_min": 1,
+                "reminder_offset": 15,
+                "notify_evening": 1,
+                "is_paused": 0,
+                "notify_schedule_update": 1,
+            }
+        )
         labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
         self.assertIn("✅ Reminder (15 min)", labels)

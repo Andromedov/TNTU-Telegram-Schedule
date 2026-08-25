@@ -1,11 +1,11 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from infrastructure import database as db
-from schedule import service as scraper
 from bot.common import UserState
 from config import SENIOR_ID
 from i18n.messages import get_html_msg, get_msg, trusted_html
+from infrastructure import database as db
+from schedule import service as scraper
 
 
 class LifecycleHandlerMixin:
@@ -29,8 +29,10 @@ class LifecycleHandlerMixin:
             next_class = await self._get_next_class_text(user["group_name"], language)
             msg = await message.answer(
                 get_html_msg(
-                    "start.greeting_existing", language=language,
-                    name=message.from_user.first_name, group=user["group_name"],
+                    "start.greeting_existing",
+                    language=language,
+                    name=message.from_user.first_name,
+                    group=user["group_name"],
                     next_class=trusted_html(next_class),
                 ),
                 parse_mode="HTML",
@@ -104,12 +106,13 @@ class LifecycleHandlerMixin:
             pass
 
         clean_name = group_name.replace("-", "").replace(" ", "")
-        if (len(clean_name) < 3 or not any(char.isalpha() for char in clean_name)
-                or not any(char.isdigit() for char in clean_name)):
+        if (
+            len(clean_name) < 3
+            or not any(char.isalpha() for char in clean_name)
+            or not any(char.isdigit() for char in clean_name)
+        ):
             new_msg = await message.answer(get_msg("group.invalid", language=language), parse_mode="HTML")
-            await state.update_data(
-                prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id
-            )
+            await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
             return
 
         processing_msg = await message.answer(
@@ -140,9 +143,7 @@ class LifecycleHandlerMixin:
             pass
 
     async def process_change_group(self, callback: CallbackQuery, state: FSMContext):
-        language = await self._get_user_language(
-            callback.from_user.id, callback.from_user.language_code
-        )
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         await callback.message.edit_text(get_msg("group.ask_new", language=language))
         await state.set_state(UserState.waiting_for_group)
         await state.update_data(
@@ -165,8 +166,10 @@ class LifecycleHandlerMixin:
         next_class = await self._get_next_class_text(user["group_name"], language)
         await callback.message.edit_text(
             get_html_msg(
-                "start.main_menu_title", language=language,
-                group=user["group_name"], next_class=trusted_html(next_class),
+                "start.main_menu_title",
+                language=language,
+                group=user["group_name"],
+                next_class=trusted_html(next_class),
             ),
             parse_mode="HTML",
             disable_web_page_preview=True,

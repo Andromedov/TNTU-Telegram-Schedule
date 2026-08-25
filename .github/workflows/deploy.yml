@@ -1,28 +1,90 @@
-name: Deploy to VPS
+name: Deployment
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image:
+        description: Immutable GHCR image reference including its digest
+        required: true
+        type: string
+      revision:
+        description: Git revision containing the matching Compose configuration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    name: Deploy to production
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
 
     steps:
-    - name: Deploy via SSH and Git Pull
-      uses: appleboy/ssh-action@v1.2.2
-      with:
-        host: ${{ secrets.SSH_HOST }}
-        username: ${{ secrets.SSH_USER }}
-        password: ${{ secrets.SSH_PASSWORD }}
-        script: |
-          cd /home/app/andromedov/TNTU-Telegram-Schedule
-          
-          git fetch --all
-          git reset --hard origin/main
-          git pull origin main
-          
-          docker compose up -d --build
-          
-          docker image prune -f
+      - name: Validate deployment inputs
+        shell: bash
+        env:
+          DEPLOY_IMAGE: ${{ inputs.image }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+        run: |
+          expected_prefix="ghcr.io/${GITHUB_REPOSITORY,,}@sha256:"
+          digest="${DEPLOY_IMAGE#"$expected_prefix"}"
+
+          if [[ "$DEPLOY_IMAGE" != "$expected_prefix"* || ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid deployment image: expected this repository's GHCR image pinned by SHA-256 digest." >&2
+            exit 1
+          fi
+
+          if [[ ! "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid deployment revision: expected a full Git commit SHA." >&2
+            exit 1
+          fi
+
+      - name: Deploy published image over SSH
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_IMAGE: ${{ inputs.image }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          envs: DEPLOY_IMAGE,DEPLOY_REVISION
+          command_timeout: 10m
+          script: |
+            set -eu
+            cd /home/app/andromedov/TNTU-Telegram-Schedule
+            git fetch --force --tags origin +refs/heads/main:refs/remotes/origin/main
+
+            if [ ! -f .env ]; then
+              echo "Production .env file is missing." >&2
+              exit 1
+            fi
+
+            if ! git cat-file -e "$DEPLOY_REVISION^{commit}"; then
+              echo "Release revision $DEPLOY_REVISION is unavailable on the server." >&2
+              exit 1
+            fi
+
+            if ! git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main; then
+              echo "Release revision $DEPLOY_REVISION is not part of main." >&2
+              exit 1
+            fi
+
+            current_revision="$(git rev-parse HEAD)"
+            if [ "$current_revision" != "$DEPLOY_REVISION" ] && git merge-base --is-ancestor "$DEPLOY_REVISION" "$current_revision"; then
+              echo "Skipping $DEPLOY_REVISION because a newer release is already deployed."
+              exit 0
+            fi
+
+            git reset --hard "$DEPLOY_REVISION"
+            docker pull "$DEPLOY_IMAGE"
+            docker tag "$DEPLOY_IMAGE" ghcr.io/andromedov/tntu-telegram-schedule:latest
+            docker compose up -d --no-build --pull never --remove-orphans
+            docker image prune -f

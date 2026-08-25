@@ -4,7 +4,6 @@ from typing import Iterable
 
 from i18n.messages import get_msg, normalize_language
 
-
 CAMPUS_MAP_URL = "https://www.google.com/maps/d/viewer?mid=1CYr1ELkD1Pv6nbimq3kz_uv6a1ClLJpK"
 
 BUILDINGS = {

@@ -6,6 +6,7 @@
 [![Telegram](https://img.shields.io/badge/aiogram-3.x-24A1DE?logo=telegram&logoColor=white)](https://docs.aiogram.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-Enabled-90D4F4?logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Checks](https://github.com/Andromedov/TNTU-Telegram-Schedule/actions/workflows/checks.yml/badge.svg)](https://github.com/Andromedov/TNTU-Telegram-Schedule/actions/workflows/checks.yml)
 [![License: Apache License v2.0](https://img.shields.io/badge/License-Apache_2.0-orange?logo=apache&logoColor=white.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 **A Telegram bot for tracking Ternopil National Technical University (TNTU) class schedules.**<br>
@@ -58,6 +59,7 @@ BOT_TOKEN=your_telegram_bot_token_here
 
 The easiest way to run this bot is via Docker Compose:
 ```bash
+docker compose pull
 docker compose up -d
 ```
 
@@ -102,6 +104,21 @@ Feature modules use imports rooted at `src`, so local runs, tests, and Docker re
 The bot supports Ukrainian (`uk`) and English (`en`). Users can switch language in **Settings → Language**, and the preference is stored in SQLite. New users start with English when Telegram reports an English locale; all other or unknown locales fall back to Ukrainian.
 
 Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/i18n/messages.json`. Missing English keys automatically fall back to Ukrainian.
+
+## ✅ Quality Checks
+
+The `Checks` workflow can be started manually and runs automatically for pull requests and pushes to `main` or any `dev/*` branch. It performs linting, formatting checks, byte-compilation, JSON validation, unit tests, dependency auditing, and a Docker build. Version tags such as `v1.4.0` run the same checks before the `Release` workflow publishes the image to GitHub Container Registry and invokes the separate `Deployment` workflow. Production pulls the public image by its immutable SHA-256 digest and never builds application code on the VPS.
+
+Run the same Python checks locally with:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m ruff check src tests
+python -m ruff format --check src tests
+python -m compileall -q src tests
+python -m unittest discover -s tests -v
+python -m pip_audit -r requirements.txt
+```
 
 ## 📜 License
 

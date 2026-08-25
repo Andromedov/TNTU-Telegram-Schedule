@@ -6,7 +6,6 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 from i18n.messages import get_msg
 from schedule.formatting import lesson_html, lesson_plain_text
 
-
 TELEGRAM_MESSAGE_LIMIT = 4096
 COPY_TEXT_LIMIT = 256
 
@@ -25,10 +24,10 @@ def _append_with_limit(html_parts: list[str], plain_parts: list[str], html_line:
 
 
 def build_day_share(
-        group_name: str,
-        target_date: datetime,
-        schedule: list,
-        language: str = "uk",
+    group_name: str,
+    target_date: datetime,
+    schedule: list,
+    language: str = "uk",
 ) -> tuple[str, str] | None:
     classes = _actual_classes(schedule)
     if not classes:
@@ -61,10 +60,10 @@ def build_day_share(
 
 
 def build_week_share(
-        group_name: str,
-        monday: datetime,
-        week_schedules: list[list],
-        language: str = "uk",
+    group_name: str,
+    monday: datetime,
+    week_schedules: list[list],
+    language: str = "uk",
 ) -> tuple[str, str] | None:
     if not any(_actual_classes(schedule) for schedule in week_schedules):
         return None
@@ -114,12 +113,20 @@ def build_week_share(
 def get_share_message_keyboard(plain_text: str, language: str = "uk") -> InlineKeyboardMarkup:
     keyboard = []
     if len(plain_text) <= COPY_TEXT_LIMIT:
-        keyboard.append([InlineKeyboardButton(
-            text=get_msg("share.copy", language=language),
-            copy_text=CopyTextButton(text=plain_text),
-        )])
-    keyboard.append([InlineKeyboardButton(
-        text=get_msg("share.close", language=language),
-        callback_data="delete_msg",
-    )])
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=get_msg("share.copy", language=language),
+                    copy_text=CopyTextButton(text=plain_text),
+                )
+            ]
+        )
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text=get_msg("share.close", language=language),
+                callback_data="delete_msg",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

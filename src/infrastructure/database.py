@@ -1,8 +1,10 @@
-import aiosqlite
-from config import DB_PATH
-import os
 import logging
+import os
 from typing import Any
+
+import aiosqlite
+
+from config import DB_PATH
 
 EXPECTED_COLUMNS = {
     'group_name': 'TEXT',
@@ -20,7 +22,7 @@ EXPECTED_COLUMNS = {
     'notify_laboratories': 'BOOLEAN DEFAULT 1',
     'notify_practicals': 'BOOLEAN DEFAULT 1',
     'quiet_hours_start': 'INTEGER',
-    'quiet_hours_end': 'INTEGER'
+    'quiet_hours_end': 'INTEGER',
 }
 
 
@@ -53,14 +55,18 @@ async def init_db():
 
         await db.commit()
 
+
 async def add_or_update_user(user_id: int, group_name: str = None, language: str = 'uk'):
     async with aiosqlite.connect(DB_PATH) as db:
         if group_name:
-            await db.execute("""
+            await db.execute(
+                """
                              INSERT INTO users (user_id, group_name, language)
                              VALUES (?, ?, ?) ON CONFLICT(user_id) DO
                              UPDATE SET group_name=excluded.group_name
-                             """, (user_id, group_name, language))
+                             """,
+                (user_id, group_name, language),
+            )
         else:
             await db.execute(
                 "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, ?)",
@@ -75,11 +81,13 @@ async def clear_user_group(user_id: int):
         await db.execute("UPDATE users SET group_name = NULL WHERE user_id = ?", (user_id,))
         await db.commit()
 
+
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
             return await cursor.fetchone()
+
 
 async def update_setting(user_id: int, setting: str, value: Any):
     if setting not in EXPECTED_COLUMNS:
@@ -88,12 +96,14 @@ async def update_setting(user_id: int, setting: str, value: Any):
         await db.execute(f"UPDATE users SET {setting} = ? WHERE user_id = ?", (value, user_id))
         await db.commit()
 
+
 async def get_active_users():
     """Отримати всіх користувачів, у яких не увімкнена пауза."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE is_paused = 0") as cursor:
             return await cursor.fetchall()
+
 
 async def get_users_batch(limit: int, offset: int):
     """Отримати користувачів порціями (батчами)."""
@@ -124,8 +134,4 @@ async def get_statistics() -> dict:
                               """) as cursor:
             top_groups = await cursor.fetchall()
 
-        return {
-            "total": total_users,
-            "active": active_users,
-            "top_groups": top_groups
-        }
+        return {"total": total_users, "active": active_users, "top_groups": top_groups}
