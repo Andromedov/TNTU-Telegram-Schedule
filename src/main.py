@@ -1,12 +1,14 @@
 import asyncio
 import logging
+
 from aiogram import Bot, Dispatcher, Router
-from config import BOT_TOKEN
-from infrastructure.database import init_db
+
 from bot.router import ScheduleBotHandlers
-from jobs.scheduler import setup_scheduler
+from config import BOT_TOKEN
 from i18n.messages import get_msg
+from infrastructure.database import init_db
 from infrastructure.http_client import http_client
+from jobs.scheduler import setup_scheduler
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

@@ -8,34 +8,79 @@ from bs4 import BeautifulSoup, Tag
 
 from schedule.formatting import normalize_atutor_url
 
-
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 
 
 def sanitize_group(group_name: str) -> str:
     mapping = {
-        "A": "А", "a": "а", "B": "В", "C": "С", "c": "с", "E": "Е", "e": "е",
-        "H": "Н", "I": "І", "i": "і", "K": "К", "k": "к", "M": "М", "m": "м",
-        "O": "О", "o": "о", "P": "Р", "p": "р", "T": "Т", "t": "т", "X": "Х", "x": "х",
+        "A": "А",
+        "a": "а",
+        "B": "В",
+        "C": "С",
+        "c": "с",
+        "E": "Е",
+        "e": "е",
+        "H": "Н",
+        "I": "І",
+        "i": "і",
+        "K": "К",
+        "k": "к",
+        "M": "М",
+        "m": "м",
+        "O": "О",
+        "o": "о",
+        "P": "Р",
+        "p": "р",
+        "T": "Т",
+        "t": "т",
+        "X": "Х",
+        "x": "х",
     }
     return "".join(str(mapping.get(character, character)) for character in group_name)
 
 
 def transliterate_for_url(text: str) -> str:
     mapping = {
-        "а": "a", "б": "b", "в": "v", "г": "g", "ґ": "g", "д": "d", "е": "e",
-        "є": "e", "ж": "zh", "з": "z", "и": "y", "і": "i", "ї": "i", "й": "y",
-        "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r",
-        "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c", "ч": "ch",
-        "ш": "sh", "щ": "shch", "ь": "", "ю": "yu", "я": "ya", "-": "",
+        "а": "a",
+        "б": "b",
+        "в": "v",
+        "г": "g",
+        "ґ": "g",
+        "д": "d",
+        "е": "e",
+        "є": "e",
+        "ж": "zh",
+        "з": "z",
+        "и": "y",
+        "і": "i",
+        "ї": "i",
+        "й": "y",
+        "к": "k",
+        "л": "l",
+        "м": "m",
+        "н": "n",
+        "о": "o",
+        "п": "p",
+        "р": "r",
+        "с": "s",
+        "т": "t",
+        "у": "u",
+        "ф": "f",
+        "х": "h",
+        "ц": "c",
+        "ч": "ch",
+        "ш": "sh",
+        "щ": "shch",
+        "ь": "",
+        "ю": "yu",
+        "я": "ya",
+        "-": "",
     }
     return "".join(str(mapping.get(character, character)) for character in text.lower())
 
 
 def extract_text(element: Tag) -> str:
-    return " ".join(
-        value for text in element.strings if (value := str(text).strip())
-    )
+    return " ".join(value for text in element.strings if (value := str(text).strip()))
 
 
 def is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
@@ -44,15 +89,22 @@ def is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> b
         and clean_group_no_hyphen in sanitize_group(extract_text(heading)).upper().replace("-", "")
         for heading in soup.find_all("h2")
     )
-    return has_target_heading and isinstance(
-        soup.find("table", attrs={"id": "ScheduleWeek"}), Tag
-    )
+    return has_target_heading and isinstance(soup.find("table", attrs={"id": "ScheduleWeek"}), Tag)
 
 
 def extract_semester_start(soup: BeautifulSoup) -> Optional[datetime]:
     months = {
-        "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6,
-        "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11,
+        "січня": 1,
+        "лютого": 2,
+        "березня": 3,
+        "квітня": 4,
+        "травня": 5,
+        "червня": 6,
+        "липня": 7,
+        "серпня": 8,
+        "вересня": 9,
+        "жовтня": 10,
+        "листопада": 11,
         "грудня": 12,
     }
     pattern = re.compile(r"(\d{1,2})\s+([а-яіїєґ]+).*?(\d{4})\s*року", re.IGNORECASE)
@@ -94,29 +146,30 @@ def get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
     return current_week
 
 
-def parse_core_data(html: Optional[str], group_name: str) -> Tuple[
-        bool, Optional[Tag], List[Dict[str, Any]], Optional[BeautifulSoup]
-]:
+def parse_core_data(
+    html: Optional[str], group_name: str
+) -> Tuple[bool, Optional[Tag], List[Dict[str, Any]], Optional[BeautifulSoup]]:
     if not html:
         return False, None, [], None
     soup = BeautifulSoup(html, "html.parser")
     clean_group = sanitize_group(group_name).upper().replace("-", "")
     table = soup.find("table", attrs={"id": "ScheduleWeek"})
     if not isinstance(table, Tag):
-        table = next((
-            candidate for candidate in soup.find_all("table")
-            if isinstance(candidate, Tag) and any(
-                "понеділок" in header or "вівторок" in header
-                for header in [
-                    extract_text(th).lower() for th in candidate.find_all("th")
-                    if isinstance(th, Tag)
-                ]
-            )
-        ), None)
+        table = next(
+            (
+                candidate
+                for candidate in soup.find_all("table")
+                if isinstance(candidate, Tag)
+                and any(
+                    "понеділок" in header or "вівторок" in header
+                    for header in [extract_text(th).lower() for th in candidate.find_all("th") if isinstance(th, Tag)]
+                )
+            ),
+            None,
+        )
 
     group_exists = isinstance(table, Tag) or any(
-        isinstance(heading, Tag)
-        and clean_group in sanitize_group(extract_text(heading)).upper().replace("-", "")
+        isinstance(heading, Tag) and clean_group in sanitize_group(extract_text(heading)).upper().replace("-", "")
         for heading in soup.find_all("h2")
     )
     pdf_links = []
@@ -131,8 +184,7 @@ def parse_core_data(html: Optional[str], group_name: str) -> Tuple[
             continue
         raw_text = extract_text(anchor)
         safe_text = sanitize_group(raw_text).upper().replace("\xa0", " ").replace("-", "")
-        if (("ГРУПИ" in safe_text and clean_group in safe_text)
-                or "ГРАФІК" in safe_text or "РОЗКЛАД" in safe_text):
+        if ("ГРУПИ" in safe_text and clean_group in safe_text) or "ГРАФІК" in safe_text or "РОЗКЛАД" in safe_text:
             full_link = href if href.startswith("http") else f"https://tntu.edu.ua/{href}"
             if not any(pdf["url"] == full_link for pdf in pdf_links):
                 pdf_links.append({"name": raw_text, "url": full_link})
@@ -163,9 +215,7 @@ def build_schedule_grid(table: Tag) -> tuple[list[Tag], Dict[Tuple[int, int], Ta
 
 
 def parse_location(location: str) -> tuple[Optional[str], Optional[str]]:
-    match = re.fullmatch(
-        r"([А-ЯІЇЄҐA-Z]+\d+)\s*[-–—]\s*(.+)", location.strip(), re.IGNORECASE
-    )
+    match = re.fullmatch(r"([А-ЯІЇЄҐA-Z]+\d+)\s*[-–—]\s*(.+)", location.strip(), re.IGNORECASE)
     return (match.group(1), match.group(2)) if match else (None, None)
 
 
@@ -178,9 +228,7 @@ def parse_lesson_cell(cell: Tag, time_text: str) -> Optional[Dict[str, Any]]:
         subject = extract_text(subject_div)
     else:
         clone = copy.deepcopy(cell)
-        for detail in clone.find_all(
-                ["div", "span"], attrs={"class": ["Info", "Notes", "LessonType"]}
-        ):
+        for detail in clone.find_all(["div", "span"], attrs={"class": ["Info", "Notes", "LessonType"]}):
             if isinstance(detail, Tag):
                 detail.decompose()
         subject = extract_text(clone)
@@ -203,9 +251,16 @@ def parse_lesson_cell(cell: Tag, time_text: str) -> Optional[Dict[str, Any]]:
     if notes:
         full_name += f" ❗️{notes}"
     return {
-        "time": time_text, "name": full_name, "subject": subject,
-        "lesson_type": lesson_type, "location": location, "building": building,
-        "room": room, "atutor_url": atutor_url, "notes": notes, "is_pdf": False,
+        "time": time_text,
+        "name": full_name,
+        "subject": subject,
+        "lesson_type": lesson_type,
+        "location": location,
+        "building": building,
+        "room": room,
+        "atutor_url": atutor_url,
+        "notes": notes,
+        "is_pdf": False,
     }
 
 

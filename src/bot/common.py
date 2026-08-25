@@ -5,7 +5,6 @@ from aiogram.fsm.state import State, StatesGroup
 
 from i18n.messages import normalize_language
 
-
 pdf_cache: dict[str, str] = {}
 ics_cooldown: dict[int, datetime] = {}
 

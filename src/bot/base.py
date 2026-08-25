@@ -1,9 +1,9 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from infrastructure import database as db
 from bot.common import user_language
 from i18n.messages import get_msg
+from infrastructure import database as db
 
 
 class HandlerBaseMixin:
@@ -11,9 +11,7 @@ class HandlerBaseMixin:
     def _user_language(user_data, telegram_language: str | None = None) -> str:
         return user_language(user_data, telegram_language)
 
-    async def _get_user_language(
-            self, user_id: int, telegram_language: str | None = None
-    ) -> str:
+    async def _get_user_language(self, user_id: int, telegram_language: str | None = None) -> str:
         return self._user_language(await db.get_user(user_id), telegram_language)
 
     async def _cleanup_old_ui(self, message: Message, state: FSMContext):
@@ -21,9 +19,7 @@ class HandlerBaseMixin:
         data = await state.get_data()
         old_msg_id = data.get("last_ui_msg_id")
         if old_msg_id:
-            language = await self._get_user_language(
-                message.from_user.id, message.from_user.language_code
-            )
+            language = await self._get_user_language(message.from_user.id, message.from_user.language_code)
             try:
                 await message.bot.edit_message_text(
                     chat_id=message.chat.id,

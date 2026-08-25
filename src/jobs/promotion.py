@@ -4,11 +4,10 @@ import re
 
 from aiogram import Bot
 
-from infrastructure import database as db
-from schedule import service as scraper
-from jobs.formatting import get_dismiss_keyboard
 from i18n.messages import get_html_msg, normalize_language
-
+from infrastructure import database as db
+from jobs.formatting import get_dismiss_keyboard
+from schedule import service as scraper
 
 GROUP_CHECK_CONCURRENCY = 8
 GROUP_CHECK_FAILED = "CHECK_FAILED"
@@ -58,7 +57,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                 if result is not None:
                     return result
                 if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
             return None
 
     async def find_valid_group(group: str) -> str | None:
@@ -84,8 +83,10 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
             group_mapping[old_group] = new_group or "GRADUATED"
 
     if dry_run:
-        report = [f"{group} -> {new_group} (користувачів: {group_counts.get(group, 0)})"
-                  for group, new_group in group_mapping.items()]
+        report = [
+            f"{group} -> {new_group} (користувачів: {group_counts.get(group, 0)})"
+            for group, new_group in group_mapping.items()
+        ]
         return "\n".join(report) if report else "Немає груп для переведення."
 
     offset = 0
@@ -106,17 +107,23 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                 await db.clear_user_group(user["user_id"])
                 graduated_count += 1
                 try:
-                    await bot.send_message(user["user_id"], get_html_msg(
-                        "promotion.graduated", language=language, group=old_group),
-                        parse_mode="HTML", reply_markup=get_dismiss_keyboard(language))
+                    await bot.send_message(
+                        user["user_id"],
+                        get_html_msg("promotion.graduated", language=language, group=old_group),
+                        parse_mode="HTML",
+                        reply_markup=get_dismiss_keyboard(language),
+                    )
                 except Exception as error:
                     logging.warning("Не вдалося повідомити випускника %s: %s", user["user_id"], error)
             else:
                 await db.add_or_update_user(user["user_id"], new_group)
                 try:
-                    await bot.send_message(user["user_id"], get_html_msg(
-                        "promotion.promoted", language=language, old_group=old_group, new_group=new_group),
-                        parse_mode="HTML", reply_markup=get_dismiss_keyboard(language))
+                    await bot.send_message(
+                        user["user_id"],
+                        get_html_msg("promotion.promoted", language=language, old_group=old_group, new_group=new_group),
+                        parse_mode="HTML",
+                        reply_markup=get_dismiss_keyboard(language),
+                    )
                     promoted_count += 1
                 except Exception:
                     pass

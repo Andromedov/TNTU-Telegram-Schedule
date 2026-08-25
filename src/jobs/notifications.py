@@ -5,8 +5,8 @@ from html import escape
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from i18n.messages import get_html_msg, get_msg, normalize_language, trusted_html
 from infrastructure import database as db
-from schedule import service as scraper
 from jobs.formatting import (
     format_reminder_offset,
     format_schedule_changes,
@@ -14,8 +14,8 @@ from jobs.formatting import (
     get_reminder_keyboard,
     reminder_job_id,
 )
-from i18n.messages import get_html_msg, get_msg, normalize_language, trusted_html
 from jobs.reminders import kyiv_now, notifications_are_muted, reminder_enabled_for_lesson
+from schedule import service as scraper
 from schedule.formatting import html_link, lesson_html
 
 
@@ -62,31 +62,45 @@ async def send_evening_schedule(bot: Bot):
                 else:
                     text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
             try:
-                await bot.send_message(user["user_id"], text, parse_mode="HTML",
-                                       disable_web_page_preview=True,
-                                       reply_markup=get_dismiss_keyboard(language))
+                await bot.send_message(
+                    user["user_id"],
+                    text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=get_dismiss_keyboard(language),
+                )
             except Exception as error:
                 logging.error("Не вдалося відправити повідомлення користувачу %s: %s", user["user_id"], error)
 
 
-async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str,
-                              scheduled_group: str, offset: int):
+async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, scheduled_group: str, offset: int):
     user = await db.get_user(user_id)
     if not user:
         return
     user_dict = dict(user)
-    if (notifications_are_muted(user_dict) or not user_dict["notify_10_min"]
-            or user_dict["group_name"] != scheduled_group
-            or not reminder_enabled_for_lesson(user_dict, lesson)):
+    if (
+        notifications_are_muted(user_dict)
+        or not user_dict["notify_10_min"]
+        or user_dict["group_name"] != scheduled_group
+        or not reminder_enabled_for_lesson(user_dict, lesson)
+    ):
         return
     language = normalize_language(user_dict.get("language"))
     subject = lesson_html(lesson) if isinstance(lesson, dict) else escape(lesson)
-    text = get_html_msg("reminders.class_starts", language=language,
-                        time_str=format_reminder_offset(offset, language),
-                        subject_name=trusted_html(subject))
+    text = get_html_msg(
+        "reminders.class_starts",
+        language=language,
+        time_str=format_reminder_offset(offset, language),
+        subject_name=trusted_html(subject),
+    )
     try:
-        await bot.send_message(user_id, text, parse_mode="HTML", disable_web_page_preview=True,
-                               reply_markup=get_reminder_keyboard(language))
+        await bot.send_message(
+            user_id,
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=get_reminder_keyboard(language),
+        )
     except Exception as error:
         logging.error("Помилка відправки нагадування: %s", error)
 
@@ -106,19 +120,23 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_pr
             time_parts = item["time"].split("-")[0].split(":")
             try:
                 now = now_provider()
-                class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]),
-                                         second=0, microsecond=0)
+                class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0)
                 for user in users:
                     if not reminder_enabled_for_lesson(user, item):
                         continue
                     first_offset = user.get("first_class_reminder_offset")
-                    offset = (int(first_offset) if class_index == 0 and first_offset is not None
-                              else int(user.get("reminder_offset", 10)))
+                    offset = (
+                        int(first_offset)
+                        if class_index == 0 and first_offset is not None
+                        else int(user.get("reminder_offset", 10))
+                    )
                     reminder_time = class_time - timedelta(minutes=offset)
                     if reminder_time > now:
                         user_id = user["user_id"]
                         scheduler.add_job(
-                            send_class_reminder, "date", run_date=reminder_time,
+                            send_class_reminder,
+                            "date",
+                            run_date=reminder_time,
                             args=[bot, user_id, item, group, offset],
                             id=reminder_job_id(user_id, group, class_time, item["name"]),
                             replace_existing=True,
@@ -133,8 +151,7 @@ async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
         return
     language = normalize_language(dict(user).get("language"))
     try:
-        await bot.send_message(user_id, html_text, parse_mode="HTML",
-                               reply_markup=get_reminder_keyboard(language))
+        await bot.send_message(user_id, html_text, parse_mode="HTML", reply_markup=get_reminder_keyboard(language))
     except Exception as error:
         logging.error("Помилка повторного нагадування користувачу %s: %s", user_id, error)
 
@@ -143,13 +160,15 @@ async def send_morning_digest(bot: Bot, digest_hour: int):
     groups = {}
     for user in await db.get_active_users():
         user_dict = dict(user)
-        if (user_dict.get("group_name") and user_dict.get("morning_digest")
-                and int(user_dict.get("morning_digest_hour") or 7) == digest_hour
-                and not notifications_are_muted(user_dict)):
+        if (
+            user_dict.get("group_name")
+            and user_dict.get("morning_digest")
+            and int(user_dict.get("morning_digest_hour") or 7) == digest_hour
+            and not notifications_are_muted(user_dict)
+        ):
             groups.setdefault(user_dict["group_name"], []).append(user_dict)
     for group, users in groups.items():
-        classes = [item for item in await scraper.parse_schedule_for_today(group)
-                   if not item.get("is_pdf", False)]
+        classes = [item for item in await scraper.parse_schedule_for_today(group) if not item.get("is_pdf", False)]
         for user in users:
             language = normalize_language(user.get("language"))
             text = get_html_msg("reminders.digest_title", language=language, group=group) + "\n"
@@ -159,9 +178,13 @@ async def send_morning_digest(bot: Bot, digest_hour: int):
             else:
                 text += get_msg("reminders.digest_empty", language=language)
             try:
-                await bot.send_message(user["user_id"], text, parse_mode="HTML",
-                                       disable_web_page_preview=True,
-                                       reply_markup=get_dismiss_keyboard(language))
+                await bot.send_message(
+                    user["user_id"],
+                    text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=get_dismiss_keyboard(language),
+                )
             except Exception as error:
                 logging.error("Помилка ранкового дайджесту для %s: %s", user["user_id"], error)
 
@@ -180,8 +203,11 @@ async def check_schedule_updates_task(bot: Bot):
         for user in users:
             language = normalize_language(dict(user).get("language"))
             try:
-                await bot.send_message(user["user_id"], format_schedule_changes(changes, language),
-                                       parse_mode="HTML", reply_markup=get_dismiss_keyboard(language))
+                await bot.send_message(
+                    user["user_id"],
+                    format_schedule_changes(changes, language),
+                    parse_mode="HTML",
+                    reply_markup=get_dismiss_keyboard(language),
+                )
             except Exception as error:
-                logging.warning("Не вдалося повідомити %s про зміну розкладу: %s",
-                                user["user_id"], error)
+                logging.warning("Не вдалося повідомити %s про зміну розкладу: %s", user["user_id"], error)

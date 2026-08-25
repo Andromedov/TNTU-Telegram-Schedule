@@ -8,9 +8,7 @@ from i18n.messages import get_msg
 class CampusHandlerMixin:
     async def process_show_campus(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
-        language = await self._get_user_language(
-            callback.from_user.id, callback.from_user.language_code
-        )
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         await callback.message.edit_text(
             get_msg("campus.title", language=language),
             parse_mode="HTML",
@@ -20,9 +18,7 @@ class CampusHandlerMixin:
         await callback.answer()
 
     async def process_campus_building(self, callback: CallbackQuery):
-        language = await self._get_user_language(
-            callback.from_user.id, callback.from_user.language_code
-        )
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         try:
             parts = callback.data.split(":")
             number = int(parts[1])

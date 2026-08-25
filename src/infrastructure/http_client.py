@@ -5,7 +5,6 @@ from typing import Any
 
 import aiohttp
 
-
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -21,15 +20,15 @@ class HttpTextResponse:
 
 class HttpClient:
     def __init__(
-            self,
-            *,
-            connect_timeout: float = 5,
-            read_timeout: float = 15,
-            total_timeout: float = 20,
-            max_attempts: int = 3,
-            backoff_base: float = 0.5,
-            concurrency: int = 4,
-            min_interval: float = 0.1,
+        self,
+        *,
+        connect_timeout: float = 5,
+        read_timeout: float = 15,
+        total_timeout: float = 20,
+        max_attempts: int = 3,
+        backoff_base: float = 0.5,
+        concurrency: int = 4,
+        min_interval: float = 0.1,
     ):
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -111,24 +110,38 @@ class HttpClient:
                     if result.status in RETRYABLE_STATUSES:
                         logging.warning(
                             "HTTP %s %s завершився статусом %s після %s спроб",
-                            method, url, result.status, attempt,
+                            method,
+                            url,
+                            result.status,
+                            attempt,
                         )
                     return result
 
                 logging.warning(
                     "HTTP %s %s повернув тимчасовий статус %s; повтор %s/%s",
-                    method, url, result.status, attempt + 1, self._max_attempts,
+                    method,
+                    url,
+                    result.status,
+                    attempt + 1,
+                    self._max_attempts,
                 )
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 if attempt == self._max_attempts:
                     logging.error(
                         "HTTP %s %s не виконано після %s спроб: %s",
-                        method, url, attempt, type(error).__name__,
+                        method,
+                        url,
+                        attempt,
+                        type(error).__name__,
                     )
                     raise HttpRequestError(f"{method} {url} failed") from error
                 logging.warning(
                     "HTTP %s %s тимчасово недоступний (%s); повтор %s/%s",
-                    method, url, type(error).__name__, attempt + 1, self._max_attempts,
+                    method,
+                    url,
+                    type(error).__name__,
+                    attempt + 1,
+                    self._max_attempts,
                 )
 
             await self._wait_before_retry(attempt, retry_after)
