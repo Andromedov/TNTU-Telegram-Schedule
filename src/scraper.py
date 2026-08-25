@@ -1,4 +1,3 @@
-import aiohttp
 from bs4 import BeautifulSoup, Tag
 import logging
 from datetime import datetime, timedelta
@@ -10,6 +9,7 @@ import urllib.parse
 import re
 from typing import Optional, Tuple, List, Dict, Any
 from schedule_formatting import normalize_atutor_url
+from http_client import HttpRequestError, http_client
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
 SNAPSHOTS_FILE = "data/schedule_snapshots.json"
@@ -175,62 +175,73 @@ async def fetch_schedule_html(group_name: str, *, raise_on_network_error: bool =
     successful_responses = 0
 
     try:
-        async with aiohttp.ClientSession() as session:
-            # POST запит
-            async with session.post(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}, data={'group': group_name}) as resp:
-                if resp.status == 200:
-                    successful_responses += 1
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    if _is_valid_schedule_page(soup, clean_group_no_hyphen):
-                        html_result = html
+        # POST запит
+        response = await http_client.request_text(
+            "POST", TNTU_SCHEDULE_URL,
+            params={'p': 'uk/schedule'}, data={'group': group_name},
+        )
+        if response.status == 200:
+            successful_responses += 1
+            html = response.text
+            soup = BeautifulSoup(html, 'html.parser')
+            if _is_valid_schedule_page(soup, clean_group_no_hyphen):
+                html_result = html
 
-            # Якщо POST не спрацював, робимо GET запит по факультетах
-            if not html_result:
-                group_translit = _transliterate_for_url(clean_group)
-                async with session.get(TNTU_SCHEDULE_URL,
-                                       params={'p': 'uk/schedule', 's': f"-{group_translit}"}) as resp:
-                    if resp.status == 200:
-                        successful_responses += 1
-                        html = await resp.text()
-                        soup = BeautifulSoup(html, 'html.parser')
-                        if _is_valid_schedule_page(soup, clean_group_no_hyphen):
+        # Якщо POST не спрацював, робимо GET запит по факультетах
+        if not html_result:
+            group_translit = _transliterate_for_url(clean_group)
+            response = await http_client.request_text(
+                "GET", TNTU_SCHEDULE_URL,
+                params={'p': 'uk/schedule', 's': f"-{group_translit}"},
+            )
+            if response.status == 200:
+                successful_responses += 1
+                html = response.text
+                soup = BeautifulSoup(html, 'html.parser')
+                if _is_valid_schedule_page(soup, clean_group_no_hyphen):
+                    html_result = html
+
+        # Резервний GET запит для PDF сторінки
+        if not html_result:
+            response = await http_client.request_text(
+                "GET", TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'},
+            )
+            if response.status == 200:
+                successful_responses += 1
+                html = response.text
+                soup = BeautifulSoup(html, 'html.parser')
+                for a_tag in soup.find_all('a', href=True):
+                    href_attr = a_tag.get('href')
+                    if not href_attr:
+                        continue
+
+                    # Надійне отримання рядка з атрибуту
+                    href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
+
+                    if '.pdf' in href_str.lower():
+                        safe_text = sanitize_group(_extract_text(a_tag)).upper().replace('\xa0', ' ').replace('-', '')
+                        if clean_group_no_hyphen in safe_text:
                             html_result = html
+                            break
 
-            # Резервний GET запит для PDF сторінки
-            if not html_result:
-                async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
-                    if resp.status == 200:
-                        successful_responses += 1
-                        html = await resp.text()
-                        soup = BeautifulSoup(html, 'html.parser')
-                        for a_tag in soup.find_all('a', href=True):
-                            href_attr = a_tag.get('href')
-                            if not href_attr:
-                                continue
+        # Зберігаємо результат у кеш, якщо він знайдений
+        if html_result:
+            _html_cache[clean_group] = {'html': html_result, 'timestamp': now}
 
-                            # Надійне отримання рядка з атрибуту
-                            href_str = str(href_attr[0] if isinstance(href_attr, list) else href_attr)
+        if not html_result and raise_on_network_error and successful_responses == 0:
+            raise ScheduleLookupError(f"Сайт розкладу недоступний для перевірки групи {group_name}")
 
-                            if '.pdf' in href_str.lower():
-                                safe_text = sanitize_group(_extract_text(a_tag)).upper().replace('\xa0', ' ').replace('-', '')
-                                if clean_group_no_hyphen in safe_text:
-                                    html_result = html
-                                    break
+        return html_result
 
-            # Зберігаємо результат у кеш, якщо він знайдений
-            if html_result:
-                _html_cache[clean_group] = {'html': html_result, 'timestamp': now}
-
-            if not html_result and raise_on_network_error and successful_responses == 0:
-                raise ScheduleLookupError(f"Сайт розкладу недоступний для перевірки групи {group_name}")
-
-            return html_result
-
-    except Exception as e:
+    except (HttpRequestError, ScheduleLookupError) as e:
         logging.error(f"Помилка скрейпінгу: {e}")
         if raise_on_network_error:
             raise ScheduleLookupError(f"Не вдалося перевірити групу {group_name}") from e
+        return None
+    except Exception as e:
+        logging.exception("Неочікувана помилка обробки відповіді сайту розкладу")
+        if raise_on_network_error:
+            raise ScheduleLookupError(f"Не вдалося обробити розклад групи {group_name}") from e
         return None
 
 
@@ -311,61 +322,64 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
         return _semester_dates_cache
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'}) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, 'html.parser')
+        response = await http_client.request_text(
+            "GET", TNTU_SCHEDULE_URL, params={'p': 'uk/schedule'},
+        )
+        if response.status == 200:
+            html = response.text
+            soup = BeautifulSoup(html, 'html.parser')
 
-                    pattern = re.compile(
-                        r"(\d{1,2})\s+([а-яяіїє]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*(\d{1,2})\s+([а-яяіїє]+)\s+(\d{4})",
-                        re.IGNORECASE
-                    )
+            pattern = re.compile(
+                r"(\d{1,2})\s+([а-яяіїє]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*(\d{1,2})\s+([а-яяіїє]+)\s+(\d{4})",
+                re.IGNORECASE
+            )
 
-                    months_map = {
-                        'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4, 'травня': 5, 'червня': 6,
-                        'липня': 7, 'серпня': 8, 'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
-                    }
+            months_map = {
+                'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4, 'травня': 5, 'червня': 6,
+                'липня': 7, 'серпня': 8, 'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
+            }
 
-                    for tag in soup.find_all(['h2', 'h3', 'div', 'p']):
-                        if not isinstance(tag, Tag):
+            for tag in soup.find_all(['h2', 'h3', 'div', 'p']):
+                if not isinstance(tag, Tag):
+                    continue
+
+                text = _extract_text(tag)
+                match = pattern.search(text)
+
+                if match:
+                    try:
+                        start_day = int(match.group(1))
+                        start_month_str = match.group(2).lower()
+                        start_year_str = match.group(3)
+
+                        end_day = int(match.group(4))
+                        end_month_str = match.group(5).lower()
+                        end_year = int(match.group(6))
+
+                        start_month = months_map.get(start_month_str)
+                        end_month = months_map.get(end_month_str)
+
+                        if not start_month or not end_month:
                             continue
 
-                        text = _extract_text(tag)
-                        match = pattern.search(text)
+                        start_year = int(start_year_str) if start_year_str else end_year
 
-                        if match:
-                            try:
-                                start_day = int(match.group(1))
-                                start_month_str = match.group(2).lower()
-                                start_year_str = match.group(3)
+                        if not start_year_str and start_month > end_month:
+                            start_year = end_year - 1
 
-                                end_day = int(match.group(4))
-                                end_month_str = match.group(5).lower()
-                                end_year = int(match.group(6))
+                        start_date = datetime(start_year, start_month, start_day)
+                        end_date = datetime(end_year, end_month, end_day, 23, 59, 59)
 
-                                start_month = months_map.get(start_month_str)
-                                end_month = months_map.get(end_month_str)
+                        _semester_dates_cache = (start_date, end_date)
+                        _semester_dates_cache_time = now
+                        return _semester_dates_cache
 
-                                if not start_month or not end_month:
-                                    continue
-
-                                start_year = int(start_year_str) if start_year_str else end_year
-
-                                if not start_year_str and start_month > end_month:
-                                    start_year = end_year - 1
-
-                                start_date = datetime(start_year, start_month, start_day)
-                                end_date = datetime(end_year, end_month, end_day, 23, 59, 59)
-
-                                _semester_dates_cache = (start_date, end_date)
-                                _semester_dates_cache_time = now
-                                return _semester_dates_cache
-
-                            except ValueError:
-                                continue
-    except Exception as e:
-        logging.error(f"Помилка парсингу дат семестру: {e}")
+                    except ValueError:
+                        continue
+    except HttpRequestError as e:
+        logging.error(f"Не вдалося отримати дати семестру: {e}")
+    except Exception:
+        logging.exception("Помилка парсингу дат семестру")
 
     return None
 
