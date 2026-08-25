@@ -4,12 +4,11 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from ics_generator import generate_week_ics  # noqa: E402
+from schedule.ics import generate_week_ics  # noqa: E402
 
 
 class IcsGeneratorTests(unittest.TestCase):

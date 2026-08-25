@@ -1,5 +1,6 @@
 import os
-from dotenv import load_dotenv, find_dotenv
+
+from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
@@ -13,4 +14,5 @@ if SENIOR_ID:
     except ValueError:
         SENIOR_ID = None
 
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 DB_PATH = "data/users.sqlite3"

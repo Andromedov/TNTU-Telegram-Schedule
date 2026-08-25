@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/andromedov/tntu-telegram-schedule:latest
     container_name: schedule_bot
     restart: unless-stopped
     init: true

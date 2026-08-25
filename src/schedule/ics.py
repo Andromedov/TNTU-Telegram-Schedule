@@ -1,18 +1,21 @@
-from datetime import datetime, timedelta
-import pytz
 import logging
 import uuid
+from datetime import datetime, timedelta
+
+import pytz
 
 
 def _escape_text(value: str) -> str:
     """Екранує значення типу TEXT відповідно до RFC 5545."""
-    return (str(value)
-            .replace('\\', '\\\\')
-            .replace('\r\n', '\\n')
-            .replace('\n', '\\n')
-            .replace('\r', '\\n')
-            .replace(';', '\\;')
-            .replace(',', '\\,'))
+    return (
+        str(value)
+        .replace('\\', '\\\\')
+        .replace('\r\n', '\\n')
+        .replace('\n', '\\n')
+        .replace('\r', '\\n')
+        .replace(';', '\\;')
+        .replace(',', '\\,')
+    )
 
 
 def _fold_line(line: str) -> list[str]:
@@ -76,9 +79,7 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 if len(parts) > 1:
                     end_time_str = parts[1].strip()
                     end_hour, end_min = map(int, end_time_str.split(':'))
-                    end_dt = timezone.localize(
-                        datetime(date_obj.year, date_obj.month, date_obj.day, end_hour, end_min)
-                    )
+                    end_dt = timezone.localize(datetime(date_obj.year, date_obj.month, date_obj.day, end_hour, end_min))
                 else:
                     end_dt = start_dt + timedelta(hours=1, minutes=20)
 

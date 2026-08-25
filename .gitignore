@@ -208,3 +208,6 @@ __marimo__/
 
 # Project Data
 data/
+
+*.md
+!README.md
