@@ -89,7 +89,7 @@ class LifecycleHandlerMixin:
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
         msg = await message.answer(
-            "👑 <b>Адмін Панель</b>\nОберіть дію нижче:",
+            "👑 <b>Адмін Панель</b>\nОберіть розділ нижче:",
             parse_mode="HTML",
             reply_markup=self.get_admin_keyboard(),
         )

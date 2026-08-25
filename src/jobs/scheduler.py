@@ -4,6 +4,7 @@
 import asyncio
 
 from aiogram import Bot
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from infrastructure import database as db
@@ -14,6 +15,7 @@ from jobs.formatting import (
     get_reminder_keyboard as _get_reminder_keyboard,
     reminder_job_id as _reminder_job_id,
 )
+from jobs.monitoring import job_monitor
 from jobs.notifications import (
     check_schedule_updates_task,
     is_active_study_period,
@@ -42,10 +44,34 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
-    scheduler.add_job(send_evening_schedule, "cron", hour=20, minute=0, args=[bot])
-    scheduler.add_job(schedule_daily_reminders, "cron", hour=6, minute=0, args=[bot, scheduler])
+    scheduler.add_listener(job_monitor.handle_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+    scheduler.add_job(send_evening_schedule, "cron", hour=20, minute=0, args=[bot], id="evening_schedule")
+    scheduler.add_job(
+        schedule_daily_reminders,
+        "cron",
+        hour=6,
+        minute=0,
+        args=[bot, scheduler],
+        id="daily_reminders",
+    )
     for digest_hour in (6, 7, 8, 9):
-        scheduler.add_job(send_morning_digest, "cron", hour=digest_hour, minute=0, args=[bot, digest_hour])
-    scheduler.add_job(check_schedule_updates_task, "interval", hours=2, args=[bot])
-    scheduler.add_job(promote_groups, "cron", month=8, day=1, hour=12, minute=0, args=[bot])
+        scheduler.add_job(
+            send_morning_digest,
+            "cron",
+            hour=digest_hour,
+            minute=0,
+            args=[bot, digest_hour],
+            id=f"morning_digest_{digest_hour}",
+        )
+    scheduler.add_job(check_schedule_updates_task, "interval", hours=2, args=[bot], id="schedule_updates")
+    scheduler.add_job(
+        promote_groups,
+        "cron",
+        month=8,
+        day=1,
+        hour=12,
+        minute=0,
+        args=[bot],
+        id="group_promotion",
+    )
     return scheduler

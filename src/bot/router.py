@@ -1,5 +1,7 @@
 """Composition root for Telegram handlers and routes."""
 
+from datetime import datetime, timezone
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -35,6 +37,7 @@ class ScheduleBotHandlers(
     def __init__(self, router: Router, scheduler: AsyncIOScheduler | None = None):
         self.router = router
         self.scheduler = scheduler
+        self.started_at = datetime.now(timezone.utc)
         self._register_handlers()
 
     def _register_handlers(self):
@@ -85,6 +88,11 @@ class ScheduleBotHandlers(
         self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
 
         self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")
+        self.router.callback_query.register(self.process_admin_users, F.data == "admin_users")
+        self.router.callback_query.register(self.process_admin_notifications, F.data == "admin_notifications")
+        self.router.callback_query.register(self.process_admin_system, F.data == "admin_system")
+        self.router.callback_query.register(self.process_admin_tests, F.data == "admin_tests")
+        self.router.callback_query.register(self.process_admin_home, F.data == "admin_home")
         self.router.callback_query.register(self.process_admin_test_evening, F.data == "admin_test_evening")
         self.router.callback_query.register(self.process_admin_test_update, F.data == "admin_test_update")
         self.router.callback_query.register(self.process_admin_test_reminder, F.data == "admin_test_reminder")

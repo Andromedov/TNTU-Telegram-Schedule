@@ -1,6 +1,8 @@
 FROM python:3.12.12-slim
 LABEL authors="Andromedov"
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 ENV TZ=Europe/Kyiv
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 

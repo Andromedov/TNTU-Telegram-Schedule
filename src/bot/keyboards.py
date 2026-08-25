@@ -426,11 +426,32 @@ class KeyboardMixin:
     def get_admin_keyboard() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+                [InlineKeyboardButton(text="📊 Огляд", callback_data="admin_stats")],
+                [InlineKeyboardButton(text="👥 Користувачі", callback_data="admin_users")],
+                [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="admin_notifications")],
+                [InlineKeyboardButton(text="🩺 Стан системи", callback_data="admin_system")],
+                [InlineKeyboardButton(text="🧪 Тестові дії", callback_data="admin_tests")],
+                [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_section_keyboard(refresh_callback: str) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data=refresh_callback)],
+                [InlineKeyboardButton(text="🔙 Адмін-панель", callback_data="admin_home")],
+            ]
+        )
+
+    @staticmethod
+    def get_admin_tests_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
                 [InlineKeyboardButton(text="🧪 Тест: Вечірній розклад", callback_data="admin_test_evening")],
                 [InlineKeyboardButton(text="🧪 Тест: Перевірка змін", callback_data="admin_test_update")],
                 [InlineKeyboardButton(text="🧪 Тест: Нагадування", callback_data="admin_test_reminder")],
                 [InlineKeyboardButton(text="🧪 Dry-run: Переведення груп", callback_data="admin_test_promote")],
-                [InlineKeyboardButton(text="🔙 Закрити", callback_data="back_to_main")],
+                [InlineKeyboardButton(text="🔙 Адмін-панель", callback_data="admin_home")],
             ]
         )

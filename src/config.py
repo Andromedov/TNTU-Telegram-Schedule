@@ -14,4 +14,5 @@ if SENIOR_ID:
     except ValueError:
         SENIOR_ID = None
 
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 DB_PATH = "data/users.sqlite3"
