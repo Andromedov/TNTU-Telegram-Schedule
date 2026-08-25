@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from schedule_formatting import lesson_html, lesson_plain_text, normalize_atutor_url  # noqa: E402
+from schedule_formatting import html_link, lesson_html, lesson_plain_text, normalize_atutor_url  # noqa: E402
 
 
 class ScheduleFormattingTests(unittest.TestCase):
@@ -36,3 +36,10 @@ class ScheduleFormattingTests(unittest.TestCase):
             "name": "Legacy & lesson",
             "atutor_url": "javascript:alert(1)",
         }))
+
+    def test_html_link_escapes_label_and_url_and_rejects_unsafe_scheme(self):
+        self.assertEqual(
+            '<a href="https://example.com/?a=1&amp;b=&quot;x&quot;">PDF &lt;1&gt;</a>',
+            html_link('PDF <1>', 'https://example.com/?a=1&b="x"'),
+        )
+        self.assertEqual("PDF &lt;1&gt;", html_link("PDF <1>", "javascript:alert(1)"))

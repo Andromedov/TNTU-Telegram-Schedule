@@ -9,13 +9,13 @@ import logging
 import re
 from html import escape
 from datetime import datetime, timedelta
-from messages import get_msg, normalize_language
+from messages import get_html_msg, get_msg, normalize_language, trusted_html
 from reminder_utils import (
     kyiv_now,
     notifications_are_muted,
     reminder_enabled_for_lesson,
 )
-from schedule_formatting import lesson_html
+from schedule_formatting import html_link, lesson_html
 
 
 GROUP_CHECK_CONCURRENCY = 8
@@ -98,7 +98,10 @@ def _format_schedule_changes(changes: list, language: str) -> str:
             'removed': 'schedule.change_removed',
             'changed': 'schedule.change_updated',
         }.get(change.get('kind'), 'schedule.change_updated')
-        block = [get_msg(key, language=language, subject=subject), f"<i>{escape(context)}</i>"]
+        block = [
+            get_html_msg(key, language=language, subject=trusted_html(subject)),
+            f"<i>{escape(context)}</i>",
+        ]
 
         for field, values in change.get('fields', {}).items():
             label = get_msg(f"schedule.change_fields.{field}", default=field, language=language)
@@ -246,7 +249,7 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                     try:
                         await bot.send_message(
                             user['user_id'],
-                            get_msg("promotion.graduated", language=language, group=old_group),
+                            get_html_msg("promotion.graduated", language=language, group=old_group),
                             parse_mode="HTML",
                             reply_markup=_get_dismiss_keyboard(language)
                         )
@@ -258,7 +261,10 @@ async def process_promotion(bot: Bot, dry_run: bool = False):
                     try:
                         await bot.send_message(
                             user['user_id'],
-                            get_msg("promotion.promoted", language=language, old_group=old_group, new_group=new_group),
+                            get_html_msg(
+                                "promotion.promoted", language=language,
+                                old_group=old_group, new_group=new_group,
+                            ),
                             parse_mode="HTML",
                             reply_markup=_get_dismiss_keyboard(language)
                         )
@@ -319,9 +325,9 @@ async def send_evening_schedule(bot: Bot):
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>" + "\n\n"
                         has_pdf = True
-                    text += f"📄 <a href='{item['viewer_url']}'>{item['name']}</a>\n"
+                    text += f"📄 {html_link(item['name'], item.get('viewer_url'))}\n"
                 else:
-                    text += f"⏰ <b>{item['time']}</b> - {lesson_html(item)}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
             try:
                 await bot.send_message(
                     user['user_id'],
@@ -350,8 +356,10 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
     time_str = _format_reminder_offset(offset, language)
 
     subject_html = lesson_html(lesson) if isinstance(lesson, dict) else escape(lesson)
-    text = get_msg("reminders.class_starts", language=language,
-                   time_str=time_str, subject_name=subject_html)
+    text = get_html_msg(
+        "reminders.class_starts", language=language,
+        time_str=time_str, subject_name=trusted_html(subject_html),
+    )
 
     try:
         await bot.send_message(
@@ -442,7 +450,7 @@ async def send_morning_digest(bot: Bot, digest_hour: int):
         classes = [item for item in schedule if not item.get('is_pdf', False)]
         for user in group_users:
             language = normalize_language(user.get("language"))
-            text = get_msg("reminders.digest_title", language=language, group=escape(group_name)) + "\n"
+            text = get_html_msg("reminders.digest_title", language=language, group=group_name) + "\n"
             if classes:
                 for item in classes:
                     text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item)}\n"

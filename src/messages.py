@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+from html import escape
 
 
 def load_messages():
@@ -19,6 +20,14 @@ def load_messages():
 messages = load_messages()
 SUPPORTED_LANGUAGES = ("uk", "en")
 DEFAULT_LANGUAGE = "uk"
+
+
+class TrustedHtml(str):
+    """Розмітка, яку вже сформовано та екрановано всередині застосунку."""
+
+
+def trusted_html(value: str) -> TrustedHtml:
+    return TrustedHtml(value)
 
 
 def normalize_language(language: str | None) -> str:
@@ -66,3 +75,12 @@ def get_msg(key: str, default: str = None, *, language: str = DEFAULT_LANGUAGE, 
             return msg
 
     return str(msg)
+
+
+def get_html_msg(key: str, default: str = None, *, language: str = DEFAULT_LANGUAGE, **kwargs) -> str:
+    """Форматує HTML-шаблон, автоматично екрануючи всі недовірені значення."""
+    safe_values = {
+        name: str(value) if isinstance(value, TrustedHtml) else escape(str(value), quote=True)
+        for name, value in kwargs.items()
+    }
+    return get_msg(key, default, language=language, **safe_values)
