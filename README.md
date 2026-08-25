@@ -82,19 +82,24 @@ python src/main.py
 ```text
 TNTU-Telegram-Schedule/
 ├── src/
-│   ├── main.py              # Application entry point
-│   ├── handlers.py          # User interactions and commands
-│   ├── scraper.py           # TNTU website scraping logic
-│   ├── http_client.py       # Shared HTTP session, timeouts, retries, and rate limits
-│   ├── scheduler.py         # Automated tasks and reminders
-│   ├── database.py          # SQLite database operations
-│   ├── messages.py          # Localization loading and locale fallback
-│   └── messages.json        # Localization and UI text
+│   ├── main.py                # Application entry point and lifecycle
+│   ├── handlers.py            # Compatibility facade and route registration
+│   ├── bot_handlers/          # Commands, schedules, campus, settings, and admin flows
+│   ├── scraper.py             # Compatibility facade, cache, and public scraper API
+│   ├── tntu_schedule/         # Schedule parsing and snapshot comparison
+│   ├── scheduler.py           # Compatibility facade and job registration
+│   ├── background_jobs/       # Notifications, formatting, and group promotion
+│   ├── http_client.py         # Shared HTTP session, retries, and rate limits
+│   ├── database.py            # SQLite database operations
+│   ├── messages.py            # Localization loading and locale fallback
+│   └── messages.json          # Localization and UI text
 ├── data/                    # Automatically generated (DB & caches)
 ├── .env.example             # Environment variables template
 ├── docker-compose.yml       
 └── Dockerfile
 ```
+
+The three facade modules preserve the existing import API while feature code is grouped by responsibility. This keeps the application entry point and integrations stable during incremental migration.
 
 ## 📝 Localization
 The bot supports Ukrainian (`uk`) and English (`en`). Users can switch language in **Settings → Language**, and the preference is stored in SQLite. New users start with English when Telegram reports an English locale; all other or unknown locales fall back to Ukrainian.
