@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from schedule_sharing import (  # noqa: E402
+from schedule.sharing import (  # noqa: E402
     COPY_TEXT_LIMIT,
     build_day_share,
     build_week_share,
     get_share_message_keyboard,
 )
-from handlers import ScheduleBotHandlers  # noqa: E402
-import handlers as handlers_module  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
+from bot import router as handlers_module  # noqa: E402
 
 
 class DaySharingTests(unittest.TestCase):

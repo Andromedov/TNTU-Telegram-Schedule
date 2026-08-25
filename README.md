@@ -82,24 +82,26 @@ python src/main.py
 ```text
 TNTU-Telegram-Schedule/
 ├── src/
-│   ├── main.py              # Application entry point
-│   ├── handlers.py          # User interactions and commands
-│   ├── scraper.py           # TNTU website scraping logic
-│   ├── http_client.py       # Shared HTTP session, timeouts, retries, and rate limits
-│   ├── scheduler.py         # Automated tasks and reminders
-│   ├── database.py          # SQLite database operations
-│   ├── messages.py          # Localization loading and locale fallback
-│   └── messages.json        # Localization and UI text
+│   ├── main.py               # Application entry point and lifecycle
+│   ├── config.py             # Environment-backed configuration
+│   ├── bot/                  # Telegram routes, handlers, keyboards, and calendar UI
+│   ├── schedule/             # TNTU access, parsing, formatting, sharing, and ICS
+│   ├── jobs/                 # Scheduled notifications and group promotion
+│   ├── infrastructure/       # SQLite and shared HTTP client
+│   ├── campus/               # Building directory and location helpers
+│   └── i18n/                 # Localization loader and message catalog
 ├── data/                    # Automatically generated (DB & caches)
 ├── .env.example             # Environment variables template
 ├── docker-compose.yml       
 └── Dockerfile
 ```
 
+Feature modules use imports rooted at `src`, so local runs, tests, and Docker resolve the same code paths without an additional package wrapper.
+
 ## 📝 Localization
 The bot supports Ukrainian (`uk`) and English (`en`). Users can switch language in **Settings → Language**, and the preference is stored in SQLite. New users start with English when Telegram reports an English locale; all other or unknown locales fall back to Ukrainian.
 
-Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/messages.json`. Missing English keys automatically fall back to Ukrainian.
+Translations, button labels, notifications, calendar names, and command descriptions are stored under language keys in `src/i18n/messages.json`. Missing English keys automatically fall back to Ukrainian.
 
 ## 📜 License
 

@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-import scraper  # noqa: E402
-from http_client import HttpTextResponse  # noqa: E402
+from schedule import service as scraper  # noqa: E402
+from infrastructure.http_client import HttpTextResponse  # noqa: E402
 
 
 FIXTURE = (ROOT / "tests" / "fixtures" / "schedule_week.html").read_text(encoding="utf-8")

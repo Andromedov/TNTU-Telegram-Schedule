@@ -8,9 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from calendar_ui import get_calendar_keyboard  # noqa: E402
-from handlers import ScheduleBotHandlers  # noqa: E402
-from messages import get_msg, normalize_language  # noqa: E402
+from bot.calendar import get_calendar_keyboard  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
+from i18n.messages import get_msg, normalize_language  # noqa: E402
 
 
 class LocalizationTests(unittest.TestCase):

@@ -10,15 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from campus import (  # noqa: E402
+from campus.directory import (  # noqa: E402
     BUILDINGS,
     CAMPUS_MAP_URL,
     building_card,
     building_number,
     schedule_buildings,
 )
-import handlers  # noqa: E402
-from handlers import ScheduleBotHandlers  # noqa: E402
+from bot import router as handlers  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
 
 
 class CampusDirectoryTests(unittest.TestCase):

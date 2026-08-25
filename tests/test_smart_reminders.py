@@ -12,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-import handlers  # noqa: E402
-import scheduler  # noqa: E402
-from handlers import ScheduleBotHandlers  # noqa: E402
-from reminder_utils import (  # noqa: E402
+from bot import router as handlers  # noqa: E402
+from jobs import scheduler  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
+from jobs.reminders import (  # noqa: E402
     lesson_type_category,
     muted_until_tomorrow,
     notifications_are_muted,

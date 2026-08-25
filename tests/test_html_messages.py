@@ -9,9 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("BOT_TOKEN", "test-token")
 
-from messages import get_html_msg, trusted_html  # noqa: E402
-import handlers  # noqa: E402
-from handlers import ScheduleBotHandlers  # noqa: E402
+from i18n.messages import get_html_msg, trusted_html  # noqa: E402
+from bot import router as handlers  # noqa: E402
+from bot.router import ScheduleBotHandlers  # noqa: E402
 
 
 class HtmlMessageTests(unittest.TestCase):
