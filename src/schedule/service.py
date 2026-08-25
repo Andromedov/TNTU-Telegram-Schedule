@@ -28,7 +28,6 @@ from schedule.parsing import (
     transliterate_for_url,
 )
 
-
 # Backward-compatible private aliases used by existing integrations and tests.
 _transliterate_for_url = transliterate_for_url
 _extract_text = extract_text
@@ -73,9 +72,7 @@ def _write_snapshots_sync(snapshots: dict):
     os.replace(temporary_file, SNAPSHOTS_FILE)
 
 
-async def fetch_schedule_html(
-        group_name: str, *, raise_on_network_error: bool = False
-) -> Optional[str]:
+async def fetch_schedule_html(group_name: str, *, raise_on_network_error: bool = False) -> Optional[str]:
     clean_group = sanitize_group(group_name)
     clean_group_no_hyphen = clean_group.upper().replace("-", "")
     now = datetime.now()
@@ -87,8 +84,10 @@ async def fetch_schedule_html(
     successful_responses = 0
     try:
         response = await http_client.request_text(
-            "POST", TNTU_SCHEDULE_URL,
-            params={"p": "uk/schedule"}, data={"group": group_name},
+            "POST",
+            TNTU_SCHEDULE_URL,
+            params={"p": "uk/schedule"},
+            data={"group": group_name},
         )
         if response.status == 200:
             successful_responses += 1
@@ -98,7 +97,8 @@ async def fetch_schedule_html(
 
         if not html_result:
             response = await http_client.request_text(
-                "GET", TNTU_SCHEDULE_URL,
+                "GET",
+                TNTU_SCHEDULE_URL,
                 params={"p": "uk/schedule", "s": f"-{transliterate_for_url(clean_group)}"},
             )
             if response.status == 200:
@@ -109,7 +109,9 @@ async def fetch_schedule_html(
 
         if not html_result:
             response = await http_client.request_text(
-                "GET", TNTU_SCHEDULE_URL, params={"p": "uk/schedule"},
+                "GET",
+                TNTU_SCHEDULE_URL,
+                params={"p": "uk/schedule"},
             )
             if response.status == 200:
                 successful_responses += 1
@@ -120,10 +122,7 @@ async def fetch_schedule_html(
                         continue
                     href = str(href_value[0] if isinstance(href_value, list) else href_value)
                     if ".pdf" in href.lower():
-                        safe_text = (
-                            sanitize_group(extract_text(anchor)).upper()
-                            .replace("\xa0", " ").replace("-", "")
-                        )
+                        safe_text = sanitize_group(extract_text(anchor)).upper().replace("\xa0", " ").replace("-", "")
                         if clean_group_no_hyphen in safe_text:
                             html_result = response.text
                             break
@@ -148,13 +147,18 @@ async def fetch_schedule_html(
 async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
     global _semester_dates_cache, _semester_dates_cache_time
     now = datetime.now()
-    if (_semester_dates_cache and _semester_dates_cache_time
-            and (now - _semester_dates_cache_time).total_seconds() < 604800):
+    if (
+        _semester_dates_cache
+        and _semester_dates_cache_time
+        and (now - _semester_dates_cache_time).total_seconds() < 604800
+    ):
         return _semester_dates_cache
 
     try:
         response = await http_client.request_text(
-            "GET", TNTU_SCHEDULE_URL, params={"p": "uk/schedule"},
+            "GET",
+            TNTU_SCHEDULE_URL,
+            params={"p": "uk/schedule"},
         )
         if response.status != 200:
             return None
@@ -165,9 +169,18 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
             re.IGNORECASE,
         )
         months = {
-            "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5,
-            "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10,
-            "листопада": 11, "грудня": 12,
+            "січня": 1,
+            "лютого": 2,
+            "березня": 3,
+            "квітня": 4,
+            "травня": 5,
+            "червня": 6,
+            "липня": 7,
+            "серпня": 8,
+            "вересня": 9,
+            "жовтня": 10,
+            "листопада": 11,
+            "грудня": 12,
         }
         for tag in soup.find_all(["h2", "h3", "div", "p"]):
             if not isinstance(tag, Tag):
@@ -244,13 +257,16 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     if not group_exists:
         return []
 
-    formatted_pdfs = [{
-        "time": "📄 PDF",
-        "name": pdf["name"],
-        "url": pdf["url"],
-        "viewer_url": f"https://docs.google.com/viewer?url={urllib.parse.quote(pdf['url'])}",
-        "is_pdf": True,
-    } for pdf in pdf_links]
+    formatted_pdfs = [
+        {
+            "time": "📄 PDF",
+            "name": pdf["name"],
+            "url": pdf["url"],
+            "viewer_url": f"https://docs.google.com/viewer?url={urllib.parse.quote(pdf['url'])}",
+            "is_pdf": True,
+        }
+        for pdf in pdf_links
+    ]
     if not soup:
         return formatted_pdfs
     weekday = target_date.weekday()
@@ -258,8 +274,7 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
         return formatted_pdfs
     target_week = get_target_week(soup, target_date)
     lessons = [
-        lesson for lesson in table_snapshot(table)
-        if lesson["week"] == target_week and lesson["weekday"] == weekday
+        lesson for lesson in table_snapshot(table) if lesson["week"] == target_week and lesson["weekday"] == weekday
     ]
     return [*lessons, *formatted_pdfs]
 

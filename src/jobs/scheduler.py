@@ -2,13 +2,11 @@
 
 # Re-export job functions from one scheduling boundary.
 import asyncio
-from infrastructure import database as db
-from schedule import service as scraper
 
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from jobs.reminders import kyiv_now
 
+from infrastructure import database as db
 from jobs.formatting import (
     format_reminder_offset as _format_reminder_offset,
     format_schedule_changes as _format_schedule_changes,
@@ -33,6 +31,8 @@ from jobs.promotion import (
     promote_groups,
     promote_groups_dry_run,
 )
+from jobs.reminders import kyiv_now
+from schedule import service as scraper
 
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler):
