@@ -9,6 +9,20 @@ from bs4 import BeautifulSoup, Tag
 from schedule.formatting import normalize_atutor_url
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
+UKRAINIAN_MONTHS = {
+    "січня": 1,
+    "лютого": 2,
+    "березня": 3,
+    "квітня": 4,
+    "травня": 5,
+    "червня": 6,
+    "липня": 7,
+    "серпня": 8,
+    "вересня": 9,
+    "жовтня": 10,
+    "листопада": 11,
+    "грудня": 12,
+}
 
 
 def sanitize_group(group_name: str) -> str:
@@ -92,21 +106,43 @@ def is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> b
     return has_target_heading and isinstance(soup.find("table", attrs={"id": "ScheduleWeek"}), Tag)
 
 
+def extract_semester_dates(soup: BeautifulSoup) -> Optional[Tuple[datetime, datetime]]:
+    pattern = re.compile(
+        r"(\d{1,2})\s+([а-яіїєґ]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*"
+        r"(\d{1,2})\s+([а-яіїєґ]+)\s+(\d{4})(?:\s*року)?",
+        re.IGNORECASE,
+    )
+    schedule = soup.find("div", attrs={"id": "Schedule"})
+    root = schedule if isinstance(schedule, Tag) else soup
+    for element in root.find_all(["h2", "h3", "div", "p"]):
+        if not isinstance(element, Tag):
+            continue
+        match = pattern.search(extract_text(element))
+        if not match:
+            continue
+        try:
+            start_month = UKRAINIAN_MONTHS.get(match.group(2).lower())
+            end_month = UKRAINIAN_MONTHS.get(match.group(5).lower())
+            if not start_month or not end_month:
+                continue
+            end_year = int(match.group(6))
+            start_year = int(match.group(3)) if match.group(3) else end_year
+            if not match.group(3) and start_month > end_month:
+                start_year -= 1
+            return (
+                datetime(start_year, start_month, int(match.group(1))),
+                datetime(end_year, end_month, int(match.group(4)), 23, 59, 59),
+            )
+        except ValueError:
+            continue
+    return None
+
+
 def extract_semester_start(soup: BeautifulSoup) -> Optional[datetime]:
-    months = {
-        "січня": 1,
-        "лютого": 2,
-        "березня": 3,
-        "квітня": 4,
-        "травня": 5,
-        "червня": 6,
-        "липня": 7,
-        "серпня": 8,
-        "вересня": 9,
-        "жовтня": 10,
-        "листопада": 11,
-        "грудня": 12,
-    }
+    semester_dates = extract_semester_dates(soup)
+    if semester_dates:
+        return semester_dates[0]
+
     pattern = re.compile(r"(\d{1,2})\s+([а-яіїєґ]+).*?(\d{4})\s*року", re.IGNORECASE)
     schedule = soup.find("div", attrs={"id": "Schedule"})
     root = schedule if isinstance(schedule, Tag) else soup
@@ -116,7 +152,7 @@ def extract_semester_start(soup: BeautifulSoup) -> Optional[datetime]:
         match = pattern.search(extract_text(heading))
         if not match:
             continue
-        month = months.get(match.group(2).lower())
+        month = UKRAINIAN_MONTHS.get(match.group(2).lower())
         if month:
             try:
                 return datetime(int(match.group(3)), month, int(match.group(1)))
