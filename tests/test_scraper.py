@@ -67,6 +67,20 @@ class ScheduleParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["Алгоритми"], [item["subject"] for item in first_week])
         self.assertEqual(["Бази даних"], [item["subject"] for item in second_week])
 
+    async def test_does_not_return_lessons_outside_published_semester_dates(self):
+        with patch.object(scraper, "fetch_schedule_html", new=AsyncMock(return_value=FIXTURE)):
+            before_semester = await scraper._get_schedule_for_date("Тестова група", datetime(2026, 8, 25))
+            after_semester = await scraper._get_schedule_for_date("Тестова група", datetime(2026, 12, 8))
+
+        self.assertEqual([], before_semester)
+        self.assertEqual([], after_semester)
+
+    def test_extracts_complete_semester_date_range(self):
+        dates = scraper._extract_semester_dates(BeautifulSoup(FIXTURE, "html.parser"))
+
+        self.assertEqual(datetime(2026, 9, 1), dates[0])
+        self.assertEqual(datetime(2026, 12, 4, 23, 59, 59), dates[1])
+
 
 class ScheduleDiffTests(unittest.TestCase):
     def test_reports_time_room_type_and_atutor_changes(self):
