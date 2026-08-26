@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import urllib.parse
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
@@ -16,6 +15,7 @@ from schedule.diff import compare_schedule_snapshots, lesson_identity
 from schedule.parsing import (
     TNTU_SCHEDULE_URL,
     build_schedule_grid,
+    extract_semester_dates,
     extract_semester_start,
     extract_text,
     get_target_week,
@@ -34,6 +34,7 @@ _extract_text = extract_text
 _is_valid_schedule_page = is_valid_schedule_page
 _get_target_week = get_target_week
 _extract_semester_start = extract_semester_start
+_extract_semester_dates = extract_semester_dates
 _parse_core_data = parse_core_data
 _build_schedule_grid = build_schedule_grid
 _parse_location = parse_location
@@ -163,51 +164,11 @@ async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
         if response.status != 200:
             return None
         soup = BeautifulSoup(response.text, "html.parser")
-        pattern = re.compile(
-            r"(\d{1,2})\s+([а-яяіїє]+)(?:\s+(\d{4}))?\s*(?:-|–|—|до)\s*"
-            r"(\d{1,2})\s+([а-яяіїє]+)\s+(\d{4})",
-            re.IGNORECASE,
-        )
-        months = {
-            "січня": 1,
-            "лютого": 2,
-            "березня": 3,
-            "квітня": 4,
-            "травня": 5,
-            "червня": 6,
-            "липня": 7,
-            "серпня": 8,
-            "вересня": 9,
-            "жовтня": 10,
-            "листопада": 11,
-            "грудня": 12,
-        }
-        for tag in soup.find_all(["h2", "h3", "div", "p"]):
-            if not isinstance(tag, Tag):
-                continue
-            match = pattern.search(extract_text(tag))
-            if not match:
-                continue
-            try:
-                start_day = int(match.group(1))
-                start_month = months.get(match.group(2).lower())
-                start_year_text = match.group(3)
-                end_day = int(match.group(4))
-                end_month = months.get(match.group(5).lower())
-                end_year = int(match.group(6))
-                if not start_month or not end_month:
-                    continue
-                start_year = int(start_year_text) if start_year_text else end_year
-                if not start_year_text and start_month > end_month:
-                    start_year = end_year - 1
-                _semester_dates_cache = (
-                    datetime(start_year, start_month, start_day),
-                    datetime(end_year, end_month, end_day, 23, 59, 59),
-                )
-                _semester_dates_cache_time = now
-                return _semester_dates_cache
-            except ValueError:
-                continue
+        semester_dates = extract_semester_dates(soup)
+        if semester_dates:
+            _semester_dates_cache = semester_dates
+            _semester_dates_cache_time = now
+            return _semester_dates_cache
     except HttpRequestError as error:
         logging.error("Не вдалося отримати дати семестру: %s", error)
     except Exception:
@@ -268,6 +229,12 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
         for pdf in pdf_links
     ]
     if not soup:
+        return formatted_pdfs
+    semester_start = extract_semester_start(soup)
+    semester_dates = extract_semester_dates(soup)
+    if semester_start and target_date.date() < semester_start.date():
+        return formatted_pdfs
+    if semester_dates and target_date.date() > semester_dates[1].date():
         return formatted_pdfs
     weekday = target_date.weekday()
     if weekday > 4 or not isinstance(table, Tag):

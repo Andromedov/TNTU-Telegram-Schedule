@@ -13,7 +13,7 @@ os.environ.setdefault("BOT_TOKEN", "test-token")
 
 from bot import router as handlers  # noqa: E402
 from bot.router import ScheduleBotHandlers  # noqa: E402
-from jobs import scheduler  # noqa: E402
+from jobs import notifications, scheduler  # noqa: E402
 from jobs.reminders import (  # noqa: E402
     lesson_type_category,
     muted_until_tomorrow,
@@ -102,6 +102,7 @@ class ReminderSchedulingTests(unittest.IsolatedAsyncioTestCase):
             patch.object(scheduler.db, "get_active_users", new=AsyncMock(return_value=users)),
             patch.object(scheduler.scraper, "parse_schedule_for_today", new=AsyncMock(return_value=schedule)),
             patch.object(scheduler, "kyiv_now", return_value=fixed_now),
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=True)),
         ):
             await scheduler.schedule_daily_reminders(AsyncMock(), fake_scheduler)
 
@@ -132,6 +133,7 @@ class ReminderSchedulingTests(unittest.IsolatedAsyncioTestCase):
             patch.object(scheduler.db, "get_active_users", new=AsyncMock(return_value=users)),
             patch.object(scheduler.scraper, "parse_schedule_for_today", new=AsyncMock(return_value=schedule)),
             patch.object(scheduler, "kyiv_now", return_value=fixed_now),
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=True)),
         ):
             await scheduler.schedule_daily_reminders(AsyncMock(), fake_scheduler)
 
@@ -163,6 +165,7 @@ class ReminderSchedulingTests(unittest.IsolatedAsyncioTestCase):
             patch.object(scheduler.db, "get_active_users", new=AsyncMock(return_value=users)),
             patch.object(scheduler.scraper, "parse_schedule_for_today", new=AsyncMock(return_value=schedule)),
             patch.object(scheduler, "kyiv_now", return_value=fixed_now),
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=True)),
         ):
             await scheduler.schedule_daily_reminders(AsyncMock(), fake_scheduler)
 
@@ -240,6 +243,7 @@ class MorningDigestTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(scheduler.db, "get_active_users", new=AsyncMock(return_value=users)),
             patch.object(scheduler.scraper, "parse_schedule_for_today", new=AsyncMock(return_value=schedule)),
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=True)),
         ):
             await scheduler.send_morning_digest(bot, 7)
 
@@ -247,6 +251,60 @@ class MorningDigestTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Розклад на сьогодні", bot.send_message.await_args_list[0].args[1])
         self.assertIn("Today's schedule", bot.send_message.await_args_list[1].args[1])
         self.assertIn("A &lt; B", bot.send_message.await_args_list[1].args[1])
+
+
+class StudyPeriodNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_semester_boundaries_are_inclusive(self):
+        semester_dates = (datetime(2026, 9, 1), datetime(2026, 12, 4, 23, 59, 59))
+
+        with patch.object(
+            notifications.scraper,
+            "get_semester_dates",
+            new=AsyncMock(return_value=semester_dates),
+        ):
+            self.assertFalse(await notifications.is_active_study_period(datetime(2026, 8, 26)))
+            self.assertTrue(await notifications.is_active_study_period(datetime(2026, 9, 1)))
+            self.assertTrue(await notifications.is_active_study_period(datetime(2026, 12, 4)))
+            self.assertFalse(await notifications.is_active_study_period(datetime(2026, 12, 5)))
+
+    async def test_evening_schedule_is_not_sent_before_semester_even_if_classes_are_published(self):
+        now = datetime(2026, 8, 26, 20, 0, tzinfo=ZoneInfo("Europe/Kyiv"))
+        users = [{"user_id": 5, "group_name": "СТс-21", "notify_evening": 1}]
+        published_schedule = [{"time": "08:00-09:20", "name": "Math", "is_pdf": False}]
+        bot = AsyncMock()
+
+        with (
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=False)),
+            patch.object(notifications.db, "get_active_users", new=AsyncMock(return_value=users)) as get_users,
+            patch.object(
+                notifications.scraper,
+                "parse_schedule_for_tomorrow",
+                new=AsyncMock(return_value=published_schedule),
+            ) as parse_schedule,
+        ):
+            await notifications.send_evening_schedule(bot, now_provider=lambda: now)
+
+        get_users.assert_not_awaited()
+        parse_schedule.assert_not_awaited()
+        bot.send_message.assert_not_awaited()
+
+    async def test_reminders_and_digest_are_not_created_before_semester(self):
+        now = datetime(2026, 8, 26, 6, 0, tzinfo=ZoneInfo("Europe/Kyiv"))
+        fake_scheduler = FakeScheduler()
+        bot = AsyncMock()
+
+        with (
+            patch.object(notifications, "is_active_study_period", new=AsyncMock(return_value=False)),
+            patch.object(notifications.db, "get_active_users", new=AsyncMock()) as get_users,
+            patch.object(notifications.scraper, "parse_schedule_for_today", new=AsyncMock()) as parse_schedule,
+        ):
+            await notifications.schedule_daily_reminders(bot, fake_scheduler, now_provider=lambda: now)
+            await notifications.send_morning_digest(bot, 7, now_provider=lambda: now)
+
+        get_users.assert_not_awaited()
+        parse_schedule.assert_not_awaited()
+        self.assertEqual([], fake_scheduler.jobs)
+        bot.send_message.assert_not_awaited()
 
 
 class ReminderHandlerTests(unittest.IsolatedAsyncioTestCase):

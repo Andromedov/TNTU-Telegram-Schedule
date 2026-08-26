@@ -32,10 +32,11 @@ async def is_active_study_period(target_date: datetime) -> bool:
     return True
 
 
-async def send_evening_schedule(bot: Bot):
-    tomorrow = datetime.now() + timedelta(days=1)
-    active_semester = await is_active_study_period(tomorrow)
-    is_weekend = tomorrow.weekday() in (5, 6)
+async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
+    tomorrow = now_provider() + timedelta(days=1)
+    if tomorrow.weekday() in (5, 6) or not await is_active_study_period(tomorrow):
+        return
+
     groups = {}
     for user in await db.get_active_users():
         user_dict = dict(user)
@@ -46,8 +47,6 @@ async def send_evening_schedule(bot: Bot):
     for group, users in groups.items():
         schedule = await scraper.parse_schedule_for_tomorrow(group)
         if not schedule:
-            continue
-        if not any(not item.get("is_pdf") for item in schedule) and (is_weekend or not active_semester):
             continue
         for user in users:
             language = normalize_language(dict(user).get("language"))
@@ -106,6 +105,10 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
 
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_provider=kyiv_now):
+    now = now_provider()
+    if now.weekday() in (5, 6) or not await is_active_study_period(now):
+        return
+
     groups = {}
     for user in await db.get_active_users():
         user_dict = dict(user)
@@ -119,7 +122,6 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_pr
         for class_index, item in enumerate(classes):
             time_parts = item["time"].split("-")[0].split(":")
             try:
-                now = now_provider()
                 class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0)
                 for user in users:
                     if not reminder_enabled_for_lesson(user, item):
@@ -156,7 +158,11 @@ async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
         logging.error("Помилка повторного нагадування користувачу %s: %s", user_id, error)
 
 
-async def send_morning_digest(bot: Bot, digest_hour: int):
+async def send_morning_digest(bot: Bot, digest_hour: int, now_provider=kyiv_now):
+    today = now_provider()
+    if today.weekday() in (5, 6) or not await is_active_study_period(today):
+        return
+
     groups = {}
     for user in await db.get_active_users():
         user_dict = dict(user)
