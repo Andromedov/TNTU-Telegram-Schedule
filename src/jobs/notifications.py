@@ -17,6 +17,7 @@ from jobs.formatting import (
 from jobs.reminders import kyiv_now, notifications_are_muted, reminder_enabled_for_lesson
 from schedule import service as scraper
 from schedule.formatting import html_link, lesson_html
+from schedule.saturday import get_saturday_source, has_saturday_schedule_date
 
 
 async def is_active_study_period(target_date: datetime) -> bool:
@@ -32,9 +33,17 @@ async def is_active_study_period(target_date: datetime) -> bool:
     return True
 
 
+async def is_automatic_study_day(target_date: datetime) -> bool:
+    if target_date.weekday() == 5:
+        return has_saturday_schedule_date(target_date)
+    if target_date.weekday() == 6:
+        return False
+    return await is_active_study_period(target_date)
+
+
 async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
     tomorrow = now_provider() + timedelta(days=1)
-    if tomorrow.weekday() in (5, 6) or not await is_active_study_period(tomorrow):
+    if not await is_automatic_study_day(tomorrow):
         return
 
     groups = {}
@@ -48,9 +57,20 @@ async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
         schedule = await scraper.parse_schedule_for_tomorrow(group)
         if not schedule:
             continue
+        if tomorrow.weekday() == 5 and not any(not item.get("is_pdf") for item in schedule):
+            continue
         for user in users:
             language = normalize_language(dict(user).get("language"))
             text = get_msg("schedule.evening_title", language=language) + "\n"
+            saturday_source = get_saturday_source(schedule)
+            if saturday_source:
+                source_weekday, source_week = saturday_source
+                text += get_html_msg(
+                    "schedule.saturday_notice",
+                    language=language,
+                    weekday=get_msg("schedule.weekdays", language=language).split("|")[source_weekday],
+                    week=source_week,
+                )
             has_pdf = False
             for item in schedule:
                 if item.get("is_pdf"):
@@ -106,7 +126,7 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
 
 async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_provider=kyiv_now):
     now = now_provider()
-    if now.weekday() in (5, 6) or not await is_active_study_period(now):
+    if not await is_automatic_study_day(now):
         return
 
     groups = {}
@@ -160,7 +180,7 @@ async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
 
 async def send_morning_digest(bot: Bot, digest_hour: int, now_provider=kyiv_now):
     today = now_provider()
-    if today.weekday() in (5, 6) or not await is_active_study_period(today):
+    if not await is_automatic_study_day(today):
         return
 
     groups = {}
@@ -175,9 +195,20 @@ async def send_morning_digest(bot: Bot, digest_hour: int, now_provider=kyiv_now)
             groups.setdefault(user_dict["group_name"], []).append(user_dict)
     for group, users in groups.items():
         classes = [item for item in await scraper.parse_schedule_for_today(group) if not item.get("is_pdf", False)]
+        if today.weekday() == 5 and not classes:
+            continue
         for user in users:
             language = normalize_language(user.get("language"))
             text = get_html_msg("reminders.digest_title", language=language, group=group) + "\n"
+            saturday_source = get_saturday_source(classes)
+            if saturday_source:
+                source_weekday, source_week = saturday_source
+                text += get_html_msg(
+                    "schedule.saturday_notice",
+                    language=language,
+                    weekday=get_msg("schedule.weekdays", language=language).split("|")[source_weekday],
+                    week=source_week,
+                )
             if classes:
                 for item in classes:
                     text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item)}\n"

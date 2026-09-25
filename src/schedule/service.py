@@ -27,6 +27,7 @@ from schedule.parsing import (
     table_snapshot,
     transliterate_for_url,
 )
+from schedule.saturday import SATURDAY_SCHEDULE_SOURCE_URL, get_saturday_substitution
 
 # Backward-compatible private aliases used by existing integrations and tests.
 _transliterate_for_url = transliterate_for_url
@@ -230,19 +231,49 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
     ]
     if not soup:
         return formatted_pdfs
-    semester_start = extract_semester_start(soup)
-    semester_dates = extract_semester_dates(soup)
-    if semester_start and target_date.date() < semester_start.date():
+
+    saturday_substitution = get_saturday_substitution(group_name, target_date)
+    if saturday_substitution:
+        weekday = saturday_substitution.source_weekday
+        target_week = saturday_substitution.source_week
+        if not any(pdf["url"] == SATURDAY_SCHEDULE_SOURCE_URL for pdf in formatted_pdfs):
+            formatted_pdfs.append(
+                {
+                    "time": "📄 PDF",
+                    "name": "Суботнє навчання — осінь 2026",
+                    "url": SATURDAY_SCHEDULE_SOURCE_URL,
+                    "viewer_url": (
+                        f"https://docs.google.com/viewer?url={urllib.parse.quote(SATURDAY_SCHEDULE_SOURCE_URL)}"
+                    ),
+                    "is_pdf": True,
+                }
+            )
+    else:
+        semester_start = extract_semester_start(soup)
+        semester_dates = extract_semester_dates(soup)
+        if semester_start and target_date.date() < semester_start.date():
+            return formatted_pdfs
+        if semester_dates and target_date.date() > semester_dates[1].date():
+            return formatted_pdfs
+        weekday = target_date.weekday()
+        if weekday > 4:
+            return formatted_pdfs
+        target_week = get_target_week(soup, target_date)
+
+    if not isinstance(table, Tag):
         return formatted_pdfs
-    if semester_dates and target_date.date() > semester_dates[1].date():
-        return formatted_pdfs
-    weekday = target_date.weekday()
-    if weekday > 4 or not isinstance(table, Tag):
-        return formatted_pdfs
-    target_week = get_target_week(soup, target_date)
-    lessons = [
-        lesson for lesson in table_snapshot(table) if lesson["week"] == target_week and lesson["weekday"] == weekday
-    ]
+    lessons = []
+    for lesson in table_snapshot(table):
+        if lesson["week"] != target_week or lesson["weekday"] != weekday:
+            continue
+        if saturday_substitution:
+            lesson = {
+                **lesson,
+                "saturday_source_weekday": weekday,
+                "saturday_source_week": target_week,
+                "saturday_source_url": SATURDAY_SCHEDULE_SOURCE_URL,
+            }
+        lessons.append(lesson)
     return [*lessons, *formatted_pdfs]
 
 
