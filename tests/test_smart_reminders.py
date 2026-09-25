@@ -254,6 +254,11 @@ class MorningDigestTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StudyPeriodNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_officially_configured_saturdays_are_automatic_study_days(self):
+        self.assertTrue(await notifications.is_automatic_study_day(datetime(2026, 9, 26)))
+        self.assertFalse(await notifications.is_automatic_study_day(datetime(2026, 9, 19)))
+        self.assertFalse(await notifications.is_automatic_study_day(datetime(2026, 9, 27)))
+
     async def test_semester_boundaries_are_inclusive(self):
         semester_dates = (datetime(2026, 9, 1), datetime(2026, 12, 4, 23, 59, 59))
 

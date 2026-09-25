@@ -15,6 +15,7 @@ from infrastructure import database as db
 from schedule import service as scraper
 from schedule.formatting import lesson_html
 from schedule.ics import generate_week_ics
+from schedule.saturday import get_saturday_source
 from schedule.sharing import build_day_share, build_week_share, get_share_message_keyboard
 
 
@@ -66,6 +67,15 @@ class ScheduleHandlerMixin:
             date=target_date.strftime("%d.%m.%Y"),
             group=user["group_name"],
         )
+        saturday_source = get_saturday_source(schedule)
+        if saturday_source:
+            source_weekday, source_week = saturday_source
+            text += get_html_msg(
+                "schedule.saturday_notice",
+                language=language,
+                weekday=weekdays[source_weekday],
+                week=source_week,
+            )
         pdf_buttons = []
         if not schedule:
             text += get_msg("schedule.no_classes_today", language=language)
@@ -134,6 +144,15 @@ class ScheduleHandlerMixin:
             if day_classes:
                 has_any_classes = True
                 text += f"🔹 <b>{escape(weekdays[index])} ({current_date.strftime('%d.%m')}):</b>\n"
+                saturday_source = get_saturday_source(day_classes)
+                if saturday_source:
+                    source_weekday, source_week = saturday_source
+                    text += get_html_msg(
+                        "schedule.saturday_notice",
+                        language=language,
+                        weekday=weekdays[source_weekday],
+                        week=source_week,
+                    )
                 for item in day_classes:
                     text += f"  ⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
                 text += "\n"
