@@ -6,7 +6,7 @@
       "evening": "Розклад ввечері", "pause": "Пауза сповіщень",
       "schedule_update": "Сповіщення про оновлення розкладу",
       "show_schedule": "📅 На день", "show_week": "🗓 На тиждень",
-      "settings": "⚙️ Налаштування", "change_group": "🔄 Змінити групу",
+      "settings": "⚙️ Налаштування", "change_group": "🔄 Змінити групу", "view_other_group": "👥 Інша група",
       "back": "🔙 Назад до меню", "custom_date": "📅 Обрати дату",
       "dismiss": "✅ Прочитано", "menu": "🏠 Меню", "refresh": "🔄 Оновити",
       "previous_week": "⬅️ Тиждень", "next_week": "Тиждень ➡️",
@@ -28,6 +28,7 @@
       "not_found": "❌ Групу <b>{group}</b> не знайдено на сайті ТНТУ або розклад для неї відсутній.\n\nПеревір правильність написання (наприклад: СТс-21, КН-31) і спробуй ще раз:",
       "need_group": "Спочатку вкажіть групу!",
       "ask_new": "Введіть нову назву групи (наприклад, СТс-21):",
+      "ask_view": "👥 <b>Перегляд іншої групи</b>\n\nВведіть назву групи (наприклад, КН-31). Ваша основна група та налаштування не зміняться:",
       "invalid": "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
     },
     "schedule": {
@@ -131,7 +132,7 @@
     "keyboard": {
       "evening": "Evening schedule", "pause": "Pause notifications", "schedule_update": "Schedule update alerts",
       "show_schedule": "📅 Daily schedule", "show_week": "🗓 Weekly schedule", "settings": "⚙️ Settings",
-      "change_group": "🔄 Change group", "back": "🔙 Back to menu", "custom_date": "📅 Choose a date",
+      "change_group": "🔄 Change group", "view_other_group": "👥 Another group", "back": "🔙 Back to menu", "custom_date": "📅 Choose a date",
       "dismiss": "✅ Dismiss", "menu": "🏠 Menu", "refresh": "🔄 Refresh", "previous_week": "⬅️ Week",
       "next_week": "Week ➡️", "current_week": "📍 Current week", "export_ics": "📲 Export to calendar (.ics)",
       "open_web": "👀 Open (Web)", "get_file": "📩 Get file", "language": "🌐 Language: English",
@@ -149,6 +150,7 @@
       "checking": "⏳ Checking whether group <b>{group}</b> exists...", "saved": "✅ Group <b>{group_name}</b> was saved!",
       "not_found": "❌ Group <b>{group}</b> was not found on the TNTU website or has no schedule.\n\nCheck the spelling (for example, СТс-21 or КН-31) and try again:",
       "need_group": "Please set your group first!", "ask_new": "Enter a new group name (for example, СТс-21):",
+      "ask_view": "👥 <b>View another group</b>\n\nEnter a group name (for example, КН-31). Your primary group and settings will not change:",
       "invalid": "❌ <b>Invalid format!</b> A group name must contain letters and digits (for example, СТс-21 or ЕМ-31).\n\nPlease try again:"
     },
     "schedule": {

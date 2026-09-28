@@ -20,6 +20,15 @@ from schedule.sharing import build_day_share, build_week_share, get_share_messag
 
 
 class ScheduleHandlerMixin:
+    @staticmethod
+    async def _resolve_schedule_group(user, state: FSMContext | None = None) -> str | None:
+        if state is not None:
+            state_data = await state.get_data()
+            view_group = state_data.get("view_group")
+            if view_group:
+                return str(view_group)
+        return str(user["group_name"]) if user and user["group_name"] else None
+
     async def _get_next_class_text(self, group_name: str, language: str = "uk") -> str:
         schedule = await scraper.parse_schedule_for_today(group_name)
         now = datetime.now()
@@ -41,14 +50,20 @@ class ScheduleHandlerMixin:
                 pass
         return get_msg("start.no_more_classes", language=language)
 
-    async def _generate_schedule_ui(self, user_id: int, offset: int) -> tuple[str, InlineKeyboardMarkup]:
+    async def _generate_schedule_ui(
+        self,
+        user_id: int,
+        offset: int,
+        group_name: str | None = None,
+    ) -> tuple[str, InlineKeyboardMarkup]:
         user = await db.get_user(user_id)
         language = self._user_language(user)
-        if not user or not user["group_name"]:
+        selected_group = group_name or (str(user["group_name"]) if user and user["group_name"] else None)
+        if not selected_group:
             return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
         target_date = datetime.now() + timedelta(days=offset)
-        schedule = await scraper._get_schedule_for_date(user["group_name"], target_date)
+        schedule = await scraper._get_schedule_for_date(selected_group, target_date)
         weekdays = get_msg("schedule.weekdays", language=language).split("|")
 
         relative_day = ""
@@ -65,7 +80,7 @@ class ScheduleHandlerMixin:
             day=weekdays[target_date.weekday()],
             relative=relative_day,
             date=target_date.strftime("%d.%m.%Y"),
-            group=user["group_name"],
+            group=selected_group,
         )
         saturday_source = get_saturday_source(schedule)
         if saturday_source:
@@ -108,10 +123,16 @@ class ScheduleHandlerMixin:
         )
         return text, self.get_schedule_nav_keyboard(offset, extra_buttons, language)
 
-    async def _generate_week_schedule_ui(self, user_id: int, offset_weeks: int) -> tuple[str, InlineKeyboardMarkup]:
+    async def _generate_week_schedule_ui(
+        self,
+        user_id: int,
+        offset_weeks: int,
+        group_name: str | None = None,
+    ) -> tuple[str, InlineKeyboardMarkup]:
         user = await db.get_user(user_id)
         language = self._user_language(user)
-        if not user or not user["group_name"]:
+        selected_group = group_name or (str(user["group_name"]) if user and user["group_name"] else None)
+        if not selected_group:
             return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
         now = datetime.now()
@@ -122,12 +143,10 @@ class ScheduleHandlerMixin:
             language=language,
             start=monday.strftime("%d.%m"),
             end=sunday.strftime("%d.%m"),
-            group=user["group_name"],
+            group=selected_group,
         )
         weekdays = get_msg("schedule.weekdays", language=language).split("|")
-        tasks = [
-            scraper._get_schedule_for_date(user["group_name"], monday + timedelta(days=index)) for index in range(7)
-        ]
+        tasks = [scraper._get_schedule_for_date(selected_group, monday + timedelta(days=index)) for index in range(7)]
         week_schedules = await asyncio.gather(*tasks)
 
         all_pdfs = {}
@@ -192,7 +211,8 @@ class ScheduleHandlerMixin:
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
@@ -201,7 +221,7 @@ class ScheduleHandlerMixin:
             await callback.message.edit_text(get_msg("schedule.loading", language=language))
         except TelegramBadRequest:
             pass
-        text, keyboard = await self._generate_schedule_ui(callback.from_user.id, offset)
+        text, keyboard = await self._generate_schedule_ui(callback.from_user.id, offset, group_name)
         try:
             await callback.message.edit_text(
                 text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard
@@ -217,7 +237,8 @@ class ScheduleHandlerMixin:
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
@@ -226,7 +247,7 @@ class ScheduleHandlerMixin:
             await callback.message.edit_text(get_msg("schedule.forming", language=language))
         except TelegramBadRequest:
             pass
-        text, keyboard = await self._generate_week_schedule_ui(callback.from_user.id, offset)
+        text, keyboard = await self._generate_week_schedule_ui(callback.from_user.id, offset, group_name)
         try:
             await callback.message.edit_text(
                 text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard
@@ -238,10 +259,11 @@ class ScheduleHandlerMixin:
             else:
                 await callback.answer()
 
-    async def process_share_day(self, callback: CallbackQuery):
+    async def process_share_day(self, callback: CallbackQuery, state: FSMContext | None = None):
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
         try:
@@ -252,8 +274,8 @@ class ScheduleHandlerMixin:
 
         await callback.answer(get_msg("share.preparing", language=language))
         target_date = datetime.now() + timedelta(days=offset)
-        schedule = await scraper._get_schedule_for_date(user["group_name"], target_date)
-        shared = build_day_share(user["group_name"], target_date, schedule, language)
+        schedule = await scraper._get_schedule_for_date(group_name, target_date)
+        shared = build_day_share(group_name, target_date, schedule, language)
         if not shared:
             await callback.message.answer(get_msg("share.empty_day", language=language))
             return
@@ -265,10 +287,11 @@ class ScheduleHandlerMixin:
             reply_markup=get_share_message_keyboard(plain_text, language),
         )
 
-    async def process_share_week(self, callback: CallbackQuery):
+    async def process_share_week(self, callback: CallbackQuery, state: FSMContext | None = None):
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
         try:
@@ -282,11 +305,11 @@ class ScheduleHandlerMixin:
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         week_schedules = await asyncio.gather(
             *[
-                scraper._get_schedule_for_date(user["group_name"], monday + timedelta(days=day_offset))
+                scraper._get_schedule_for_date(group_name, monday + timedelta(days=day_offset))
                 for day_offset in range(7)
             ]
         )
-        shared = build_week_share(user["group_name"], monday, week_schedules, language)
+        shared = build_week_share(group_name, monday, week_schedules, language)
         if not shared:
             await callback.message.answer(get_msg("share.empty_week", language=language))
             return
@@ -298,7 +321,7 @@ class ScheduleHandlerMixin:
             reply_markup=get_share_message_keyboard(plain_text, language),
         )
 
-    async def process_export_ics(self, callback: CallbackQuery):
+    async def process_export_ics(self, callback: CallbackQuery, state: FSMContext | None = None):
         user_id = callback.from_user.id
         now = datetime.now()
         language = await self._get_user_language(user_id, callback.from_user.language_code)
@@ -313,24 +336,25 @@ class ScheduleHandlerMixin:
 
         await callback.answer(get_msg("export.generating", language=language), show_alert=False)
         user = await db.get_user(user_id)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             return
         offset_weeks = int(callback.data.split(":")[1])
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         week_schedules = await asyncio.gather(
-            *[scraper._get_schedule_for_date(user["group_name"], monday + timedelta(days=index)) for index in range(7)]
+            *[scraper._get_schedule_for_date(group_name, monday + timedelta(days=index)) for index in range(7)]
         )
         schedule_data = {
             monday + timedelta(days=index): schedule for index, schedule in enumerate(week_schedules) if schedule
         }
-        ics_content = generate_week_ics(user["group_name"], schedule_data)
+        ics_content = generate_week_ics(group_name, schedule_data)
         if not ics_content.strip() or "BEGIN:VEVENT" not in ics_content:
             await callback.message.answer(get_msg("export.empty", language=language))
             return
 
         file = BufferedInputFile(
             ics_content.encode("utf-8"),
-            filename=f"Schedule_{user['group_name']}_{monday.strftime('%d_%m')}.ics",
+            filename=f"Schedule_{group_name}_{monday.strftime('%d_%m')}.ics",
         )
         try:
             await callback.message.answer_document(
@@ -352,7 +376,7 @@ class ScheduleHandlerMixin:
         )
         await callback.answer()
 
-    async def process_calendar_selection(self, callback: CallbackQuery):
+    async def process_calendar_selection(self, callback: CallbackQuery, state: FSMContext | None = None):
         data = callback.data.split(":")
         action = data[1]
         if action == "ignore":
@@ -361,7 +385,8 @@ class ScheduleHandlerMixin:
 
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
-        if not user or not user["group_name"]:
+        group_name = await self._resolve_schedule_group(user, state)
+        if not group_name:
             await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
             return
 
@@ -398,7 +423,7 @@ class ScheduleHandlerMixin:
             await callback.answer(get_msg("calendar.selection_error", language=language), show_alert=True)
             return
         offset = (target_date.date() - now.date()).days
-        text, keyboard = await self._generate_schedule_ui(callback.from_user.id, offset)
+        text, keyboard = await self._generate_schedule_ui(callback.from_user.id, offset, group_name)
         try:
             await callback.message.edit_text(
                 text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard

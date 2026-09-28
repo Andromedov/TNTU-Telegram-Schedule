@@ -50,6 +50,10 @@ class ScheduleBotHandlers(
 
         self.router.message.register(self.process_group_name_fsm, UserState.waiting_for_group)
         self.router.message.register(
+            self.process_view_group_name_fsm,
+            UserState.waiting_for_view_group,
+        )
+        self.router.message.register(
             self.process_admin_user_identifier,
             AdminState.waiting_for_user_identifier,
         )
@@ -87,6 +91,7 @@ class ScheduleBotHandlers(
         self.router.callback_query.register(self.process_snooze_reminder, F.data == "snooze_reminder")
 
         self.router.callback_query.register(self.process_change_group, F.data == "change_group")
+        self.router.callback_query.register(self.process_view_other_group, F.data == "view_other_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
         self.router.callback_query.register(self.process_toggles, F.data.startswith("toggle_"))
         self.router.callback_query.register(self.process_send_pdf, F.data.startswith("send_pdf:"))
