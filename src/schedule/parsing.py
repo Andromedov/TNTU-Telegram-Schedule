@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup, Tag
 
+from infrastructure.clock import kyiv_now
 from schedule.formatting import normalize_atutor_url
 
 TNTU_SCHEDULE_URL = "https://tntu.edu.ua/"
@@ -97,6 +98,11 @@ def extract_text(element: Tag) -> str:
     return " ".join(value for text in element.strings if (value := str(text).strip()))
 
 
+def group_schedule_url(group_name: str) -> str:
+    slug = transliterate_for_url(sanitize_group(group_name.strip()))
+    return f"{TNTU_SCHEDULE_URL}?p=uk/schedule&s=-{urllib.parse.quote(slug, safe='')}"
+
+
 def is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
     has_target_heading = any(
         isinstance(heading, Tag)
@@ -173,7 +179,7 @@ def get_target_week(soup: BeautifulSoup, target_date: datetime) -> int:
 
     heading = soup.find("h3", attrs={"class": "Black"})
     current_week = 2 if isinstance(heading, Tag) and "другий" in extract_text(heading).lower() else 1
-    today = datetime.now()
+    today = kyiv_now()
     today_monday = today.date() - timedelta(days=today.weekday())
     target_monday = target_date.date() - timedelta(days=target_date.weekday())
     weeks_difference = (target_monday - today_monday).days // 7
@@ -229,7 +235,7 @@ def parse_core_data(
 
 
 def build_schedule_grid(table: Tag) -> tuple[list[Tag], Dict[Tuple[int, int], Tag]]:
-    rows = [row for row in table.find_all("tr") if isinstance(row, Tag)]
+    rows = [row for row in table.find_all("tr") if isinstance(row, Tag) and row.find_parent("table") is table]
     grid = {}
     for row_index, row in enumerate(rows):
         column_index = 0
@@ -302,10 +308,21 @@ def parse_lesson_cell(cell: Tag, time_text: str) -> Optional[Dict[str, Any]]:
 
 def table_snapshot(table: Tag) -> List[Dict[str, Any]]:
     rows, grid = build_schedule_grid(table)
+    # Day headers define column ranges: each day may have one or two columns.
+    weekdays = {"понеділок": 0, "вівторок": 1, "середа": 2, "четвер": 3, "п'ятниця": 4}
+    day_columns = {}
+    for (row_index, column_index), cell in grid.items():
+        if cell.name != "th":
+            continue
+        label = extract_text(cell).lower().replace("’", "'")
+        if label in weekdays:
+            day_columns.setdefault(weekdays[label], set()).add(column_index)
+    if not day_columns:
+        return []
     time_to_rows = {}
-    for row_index in range(1, len(rows)):
+    for row_index in range(len(rows)):
         time_cell = grid.get((row_index, 0))
-        if not isinstance(time_cell, Tag):
+        if not isinstance(time_cell, Tag) or not time_cell.find("div", class_="LessonPeriod"):
             continue
         data = time_to_rows.setdefault(id(time_cell), {"cell": time_cell, "indices": []})
         if row_index not in data["indices"]:
@@ -320,14 +337,18 @@ def table_snapshot(table: Tag) -> List[Dict[str, Any]]:
         indices = data["indices"]
         for week in (1, 2):
             row_index = indices[min(week - 1, len(indices) - 1)]
-            for weekday in range(5):
-                cell = grid.get((row_index, weekday + 1))
-                identity = (week, weekday, id(cell))
-                if not isinstance(cell, Tag) or identity in seen_cells:
-                    continue
-                seen_cells.add(identity)
-                lesson = parse_lesson_cell(cell, time_text)
-                if lesson:
-                    lesson.update({"week": week, "weekday": weekday})
-                    snapshot.append(lesson)
+            for weekday, columns in sorted(day_columns.items()):
+                ordered_columns = sorted(columns)
+                for subgroup_index, column in enumerate(ordered_columns, start=1):
+                    cell = grid.get((row_index, column))
+                    identity = (week, weekday, id(cell))
+                    if not isinstance(cell, Tag) or identity in seen_cells:
+                        continue
+                    seen_cells.add(identity)
+                    lesson = parse_lesson_cell(cell, time_text)
+                    if lesson:
+                        common = all(grid.get((row_index, other)) is cell for other in ordered_columns)
+                        subgroup = None if common else subgroup_index
+                        lesson.update({"week": week, "weekday": weekday, "subgroup": subgroup})
+                        snapshot.append(lesson)
     return snapshot

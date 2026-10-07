@@ -1,18 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
-from zoneinfo import ZoneInfo
 
-KYIV_TZ = ZoneInfo("Europe/Kyiv")
+from infrastructure.clock import KYIV_TZ, kyiv_now
 
 REMINDER_LESSON_TYPES = {
     "lecture": "notify_lectures",
     "laboratory": "notify_laboratories",
     "practical": "notify_practicals",
 }
-
-
-def kyiv_now() -> datetime:
-    return datetime.now(KYIV_TZ)
 
 
 def muted_until_tomorrow(now: datetime | None = None) -> str:

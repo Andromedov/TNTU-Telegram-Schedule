@@ -6,10 +6,32 @@ from aiogram.types import CallbackQuery
 from i18n.messages import get_msg, normalize_language
 from infrastructure import database as db
 from jobs.reminders import REMINDER_LESSON_TYPES, kyiv_now, muted_until_tomorrow
-from jobs.scheduler import send_snoozed_reminder
+from jobs.scheduler import remove_user_jobs, schedule_daily_reminders, send_snoozed_reminder
 
 
 class SettingsHandlerMixin:
+    async def process_settings_subgroup(self, callback: CallbackQuery):
+        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+        await callback.message.edit_text(
+            get_msg("settings.choose_subgroup", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_subgroup_keyboard(language),
+        )
+        await callback.answer()
+
+    async def process_set_subgroup(self, callback: CallbackQuery):
+        value = callback.data.split(":", 1)[1]
+        if value not in {"0", "1", "2"}:
+            language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
+            await callback.answer(get_msg("settings.invalid_value", language=language), show_alert=True)
+            return
+        await db.update_setting(callback.from_user.id, "subgroup", int(value) or None)
+        await self._show_updated_settings(callback)
+        scheduler = getattr(self, "scheduler", None)
+        if scheduler is not None:
+            remove_user_jobs(scheduler, callback.from_user.id)
+            await schedule_daily_reminders(callback.bot, scheduler)
+
     async def process_show_settings(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
         user = await db.get_user(callback.from_user.id)

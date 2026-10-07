@@ -74,7 +74,7 @@ def format_schedule_changes(changes: list, language: str) -> str:
             "changed": "schedule.change_updated",
         }.get(change.get("kind"), "schedule.change_updated")
         block = [
-            get_html_msg(key, language=language, subject=trusted_html(lesson_html(lesson))),
+            get_html_msg(key, language=language, subject=trusted_html(lesson_html(lesson, language))),
             f"<i>{escape(context)}</i>",
         ]
         for field, values in change.get("fields", {}).items():

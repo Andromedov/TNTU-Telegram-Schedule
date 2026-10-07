@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 
 def lesson_identity(lesson: Dict[str, Any], include_time: bool = True) -> tuple:
-    values = (lesson.get("week"), lesson.get("weekday"))
+    values = (lesson.get("week"), lesson.get("weekday"), lesson.get("subgroup"))
     if include_time:
         values += (lesson.get("time"),)
     return values + (lesson.get("subject"),)
@@ -52,8 +52,13 @@ def compare_schedule_snapshots(old: list, new: list) -> list:
             (
                 item
                 for item in unmatched_new
-                if (item.get("week"), item.get("weekday"), item.get("time"))
-                == (old_lesson.get("week"), old_lesson.get("weekday"), old_lesson.get("time"))
+                if (item.get("week"), item.get("weekday"), item.get("time"), item.get("subgroup"))
+                == (
+                    old_lesson.get("week"),
+                    old_lesson.get("weekday"),
+                    old_lesson.get("time"),
+                    old_lesson.get("subgroup"),
+                )
             ),
             None,
         )

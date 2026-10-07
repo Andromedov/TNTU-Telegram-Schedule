@@ -6,6 +6,7 @@ from config import SENIOR_ID
 from i18n.messages import get_html_msg, get_msg, trusted_html
 from infrastructure import database as db
 from schedule import service as scraper
+from schedule.subgroups import user_subgroup
 
 
 class LifecycleHandlerMixin:
@@ -27,7 +28,7 @@ class LifecycleHandlerMixin:
             await state.set_state(UserState.waiting_for_group)
             await state.update_data(prompt_msg_id=msg.message_id, last_ui_msg_id=msg.message_id)
         else:
-            next_class = await self._get_next_class_text(user["group_name"], language)
+            next_class = await self._get_next_class_text(user["group_name"], language, user_subgroup(user))
             msg = await message.answer(
                 get_html_msg(
                     "start.greeting_existing",
@@ -231,7 +232,7 @@ class LifecycleHandlerMixin:
                 reply_markup=self.get_main_keyboard(language),
             )
             return
-        next_class = await self._get_next_class_text(user["group_name"], language)
+        next_class = await self._get_next_class_text(user["group_name"], language, user_subgroup(user))
         await callback.message.edit_text(
             get_html_msg(
                 "start.main_menu_title",

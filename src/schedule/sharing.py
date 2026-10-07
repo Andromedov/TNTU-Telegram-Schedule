@@ -42,8 +42,8 @@ def build_day_share(
 
     truncated = False
     for item in classes:
-        plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item)}"
-        html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item)}"
+        plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item, language)}"
+        html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item, language)}"
         if not _append_with_limit(html_parts, plain_parts, html_line, plain_line):
             truncated = True
             break
@@ -91,8 +91,8 @@ def build_week_share(
             truncated = True
             break
         for item in classes:
-            plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item)}"
-            html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item)}"
+            plain_line = f"⏰ {item.get('time', '')} — {lesson_plain_text(item, language)}"
+            html_line = f"⏰ <b>{escape(str(item.get('time', '')))}</b> — {lesson_html(item, language)}"
             if not _append_with_limit(html_parts, plain_parts, html_line, plain_line):
                 truncated = True
                 break

@@ -30,6 +30,7 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
                 user = await database.get_user(1)
                 self.assertEqual("uk", user["language"])
                 self.assertEqual("СТс-21", user["group_name"])
+                self.assertIsNone(user["subgroup"])
                 self.assertIsNone(user["first_class_reminder_offset"])
                 self.assertEqual(0, user["morning_digest"])
                 self.assertEqual(7, user["morning_digest_hour"])

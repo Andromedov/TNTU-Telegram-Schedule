@@ -63,10 +63,41 @@ class ScheduleHtmlTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handlers.db, "get_user", new=AsyncMock(return_value=user)),
             patch.object(handlers.scraper, "_get_schedule_for_date", new=AsyncMock(return_value=schedule)),
         ):
-            text, _ = await handler._generate_schedule_ui(1, 0)
+            text, keyboard = await handler._generate_schedule_ui(1, 0)
 
         self.assertIn("A&lt;1&gt; &amp; B", text)
         self.assertIn("PDF &lt;draft&gt; &amp; notes", text)
         self.assertIn("10:00 &lt; 11:00", text)
         self.assertIn("A &lt; B (lecture, K1 &amp; K2)", text)
         self.assertNotIn("A<1>", text)
+        self.assertIn('<a href="https://example.com/a.pdf">PDF &lt;draft&gt; &amp; notes</a>', text)
+        self.assertNotIn("https://example.com/view", text)
+        self.assertTrue(
+            any(
+                button.callback_data and button.callback_data.startswith("send_pdf:")
+                for row in keyboard.inline_keyboard
+                for button in row
+            )
+        )
+
+    async def test_day_and_week_open_original_schedule_for_viewed_group_with_or_without_pdf(self):
+        handler = object.__new__(ScheduleBotHandlers)
+        user = {"user_id": 1, "group_name": "СН-21", "language": "uk"}
+        pdf = {
+            "is_pdf": True,
+            "name": "Saturday schedule",
+            "url": "https://example.com/saturday.pdf",
+            "viewer_url": "https://example.com/view",
+        }
+        for generate in (handler._generate_schedule_ui, handler._generate_week_schedule_ui):
+            for schedule in ([], [pdf]):
+                with (
+                    self.subTest(view=generate.__name__, pdf=bool(schedule)),
+                    patch.object(handlers.db, "get_user", new=AsyncMock(return_value=user)),
+                    patch.object(handlers.scraper, "_get_schedule_for_date", new=AsyncMock(return_value=schedule)),
+                ):
+                    text, keyboard = await generate(1, 0, "СТс-21")
+                    urls = [button.url for row in keyboard.inline_keyboard for button in row if button.url]
+                    self.assertEqual(["https://tntu.edu.ua/?p=uk/schedule&s=-sts21"], urls)
+                    if schedule:
+                        self.assertEqual(1, text.count('<a href="https://example.com/saturday.pdf">'))
