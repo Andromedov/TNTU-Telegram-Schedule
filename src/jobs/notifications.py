@@ -18,6 +18,7 @@ from jobs.reminders import kyiv_now, notifications_are_muted, reminder_enabled_f
 from schedule import service as scraper
 from schedule.formatting import html_link, lesson_html
 from schedule.saturday import get_saturday_source, has_saturday_schedule_date
+from schedule.subgroups import filter_schedule, lesson_matches_subgroup, user_subgroup
 
 
 async def is_active_study_period(target_date: datetime) -> bool:
@@ -61,8 +62,9 @@ async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
             continue
         for user in users:
             language = normalize_language(dict(user).get("language"))
+            user_schedule = filter_schedule(schedule, user_subgroup(user))
             text = get_msg("schedule.evening_title", language=language) + "\n"
-            saturday_source = get_saturday_source(schedule)
+            saturday_source = get_saturday_source(user_schedule)
             if saturday_source:
                 source_weekday, source_week = saturday_source
                 text += get_html_msg(
@@ -72,14 +74,16 @@ async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
                     week=source_week,
                 )
             has_pdf = False
-            for item in schedule:
+            if not any(not item.get("is_pdf") for item in user_schedule):
+                text += get_msg("schedule.no_classes_today", language=language) + "\n"
+            for item in user_schedule:
                 if item.get("is_pdf"):
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>\n\n"
                         has_pdf = True
                     text += f"📄 {html_link(item['name'], item.get('viewer_url'))}\n"
                 else:
-                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item, language)}\n"
             try:
                 await bot.send_message(
                     user["user_id"],
@@ -102,10 +106,11 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
         or not user_dict["notify_10_min"]
         or user_dict["group_name"] != scheduled_group
         or not reminder_enabled_for_lesson(user_dict, lesson)
+        or (isinstance(lesson, dict) and not lesson_matches_subgroup(lesson, user_subgroup(user)))
     ):
         return
     language = normalize_language(user_dict.get("language"))
-    subject = lesson_html(lesson) if isinstance(lesson, dict) else escape(lesson)
+    subject = lesson_html(lesson, language) if isinstance(lesson, dict) else escape(lesson)
     text = get_html_msg(
         "reminders.class_starts",
         language=language,
@@ -138,12 +143,14 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_pr
 
     for group, users in groups.items():
         schedule = await scraper.parse_schedule_for_today(group)
-        classes = [item for item in schedule if not item.get("is_pdf", False)]
-        for class_index, item in enumerate(classes):
-            time_parts = item["time"].split("-")[0].split(":")
-            try:
-                class_time = now.replace(hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0)
-                for user in users:
+        for user in users:
+            classes = [item for item in filter_schedule(schedule, user_subgroup(user)) if not item.get("is_pdf", False)]
+            for class_index, item in enumerate(classes):
+                try:
+                    time_parts = item["time"].split("-")[0].split(":")
+                    class_time = now.replace(
+                        hour=int(time_parts[0]), minute=int(time_parts[1]), second=0, microsecond=0
+                    )
                     if not reminder_enabled_for_lesson(user, item):
                         continue
                     first_offset = user.get("first_class_reminder_offset")
@@ -155,16 +162,19 @@ async def schedule_daily_reminders(bot: Bot, scheduler: AsyncIOScheduler, now_pr
                     reminder_time = class_time - timedelta(minutes=offset)
                     if reminder_time > now:
                         user_id = user["user_id"]
+                        identity_name = item["name"]
+                        if item.get("subgroup"):
+                            identity_name += f":subgroup:{item['subgroup']}"
                         scheduler.add_job(
                             send_class_reminder,
                             "date",
                             run_date=reminder_time,
                             args=[bot, user_id, item, group, offset],
-                            id=reminder_job_id(user_id, group, class_time, item["name"]),
+                            id=reminder_job_id(user_id, group, class_time, identity_name),
                             replace_existing=True,
                         )
-            except Exception as error:
-                logging.error("Помилка створення задачі: %s", error)
+                except Exception as error:
+                    logging.error("Помилка створення задачі: %s", error)
 
 
 async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
@@ -199,8 +209,9 @@ async def send_morning_digest(bot: Bot, digest_hour: int, now_provider=kyiv_now)
             continue
         for user in users:
             language = normalize_language(user.get("language"))
+            user_classes = filter_schedule(classes, user_subgroup(user))
             text = get_html_msg("reminders.digest_title", language=language, group=group) + "\n"
-            saturday_source = get_saturday_source(classes)
+            saturday_source = get_saturday_source(user_classes)
             if saturday_source:
                 source_weekday, source_week = saturday_source
                 text += get_html_msg(
@@ -209,9 +220,9 @@ async def send_morning_digest(bot: Bot, digest_hour: int, now_provider=kyiv_now)
                     weekday=get_msg("schedule.weekdays", language=language).split("|")[source_weekday],
                     week=source_week,
                 )
-            if classes:
-                for item in classes:
-                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item)}\n"
+            if user_classes:
+                for item in user_classes:
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> — {lesson_html(item, language)}\n"
             else:
                 text += get_msg("reminders.digest_empty", language=language)
             try:
@@ -239,10 +250,15 @@ async def check_schedule_updates_task(bot: Bot):
             continue
         for user in users:
             language = normalize_language(dict(user).get("language"))
+            user_changes = [
+                change for change in changes if lesson_matches_subgroup(change["lesson"], user_subgroup(user))
+            ]
+            if not user_changes:
+                continue
             try:
                 await bot.send_message(
                     user["user_id"],
-                    format_schedule_changes(changes, language),
+                    format_schedule_changes(user_changes, language),
                     parse_mode="HTML",
                     reply_markup=get_dismiss_keyboard(language),
                 )

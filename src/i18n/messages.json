@@ -32,6 +32,8 @@
       "invalid": "❌ <b>Некоректний формат!</b> Назва групи має містити літери та цифри (наприклад: СТс-21, ЕМ-31).\n\nСпробуйте ще раз:"
     },
     "schedule": {
+      "subgroup_scope": "👥 {value}\n\n",
+      "subgroup_label": "підгрупа {number}",
       "loading": "⏳ Завантажую розклад...", "forming": "⏳ Формую розклад...",
       "no_classes_today": "🏖 <b>На цей день пар немає</b> (або розклад не знайдено).",
       "no_classes_week": "🏖 <b>На цей тиждень пар немає.</b>",
@@ -65,6 +67,9 @@
       "unknown": "❌ Інформацію про цей корпус не знайдено."
     },
     "settings": {
+      "subgroup": "👥 Підгрупа: {value}",
+      "subgroup_all": "Уся група", "subgroup_number": "Підгрупа {number}",
+      "choose_subgroup": "👥 <b>Оберіть свою підгрупу:</b>\n\nСпільні пари показуватимуться завжди. Вибір застосовується до вашого розкладу, нагадувань і експорту календаря. Для перегляду іншої групи показуються всі підгрупи.",
       "title": "⚙️ <b>Налаштування сповіщень:</b>", "updated": "Налаштування оновлено!",
       "saved": "Налаштування збережено!", "choose_reminder": "⏳ <b>Оберіть час нагадування перед початком пари:</b>",
       "reminder_off": "❌ Нагадування (Вимкнено)", "reminder_minutes": "✅ Нагадування ({minutes} хв)",
@@ -154,6 +159,8 @@
       "invalid": "❌ <b>Invalid format!</b> A group name must contain letters and digits (for example, СТс-21 or ЕМ-31).\n\nPlease try again:"
     },
     "schedule": {
+      "subgroup_scope": "👥 {value}\n\n",
+      "subgroup_label": "subgroup {number}",
       "loading": "⏳ Loading schedule...", "forming": "⏳ Preparing schedule...",
       "no_classes_today": "🏖 <b>No classes on this day</b> (or the schedule was not found).",
       "no_classes_week": "🏖 <b>No classes this week.</b>",
@@ -185,6 +192,9 @@
       "unknown": "❌ Information about this building was not found."
     },
     "settings": {
+      "subgroup": "👥 Subgroup: {value}",
+      "subgroup_all": "Entire group", "subgroup_number": "Subgroup {number}",
+      "choose_subgroup": "👥 <b>Choose your subgroup:</b>\n\nCommon classes are always included. This setting applies to your schedule, reminders and calendar export. All subgroups are shown when viewing another group.",
       "title": "⚙️ <b>Notification settings:</b>", "updated": "Settings updated!", "saved": "Settings saved!",
       "choose_reminder": "⏳ <b>Choose how early to remind you before class:</b>", "reminder_off": "❌ Reminder (Off)",
       "reminder_minutes": "✅ Reminder ({minutes} min)", "reminder_hour": "✅ Reminder (1 hour)", "reminder_hour_half": "✅ Reminder (1.5 hours)",

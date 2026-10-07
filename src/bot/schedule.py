@@ -12,11 +12,13 @@ from bot.common import get_pdf_key, ics_cooldown
 from campus.directory import schedule_buildings
 from i18n.messages import get_html_msg, get_msg, trusted_html
 from infrastructure import database as db
+from infrastructure.clock import kyiv_now
 from schedule import service as scraper
 from schedule.formatting import lesson_html
 from schedule.ics import generate_week_ics
 from schedule.saturday import get_saturday_source
 from schedule.sharing import build_day_share, build_week_share, get_share_message_keyboard
+from schedule.subgroups import filter_schedule, user_subgroup
 
 
 class ScheduleHandlerMixin:
@@ -29,9 +31,9 @@ class ScheduleHandlerMixin:
                 return str(view_group)
         return str(user["group_name"]) if user and user["group_name"] else None
 
-    async def _get_next_class_text(self, group_name: str, language: str = "uk") -> str:
-        schedule = await scraper.parse_schedule_for_today(group_name)
-        now = datetime.now()
+    async def _get_next_class_text(self, group_name: str, language: str = "uk", subgroup: int | None = None) -> str:
+        schedule = filter_schedule(await scraper.parse_schedule_for_today(group_name), subgroup)
+        now = kyiv_now()
         for item in schedule:
             if item.get("is_pdf"):
                 continue
@@ -44,7 +46,7 @@ class ScheduleHandlerMixin:
                         "start.next_class",
                         language=language,
                         time=start_time,
-                        subject=trusted_html(lesson_html(item)),
+                        subject=trusted_html(lesson_html(item, language)),
                     )
             except Exception:
                 pass
@@ -62,8 +64,9 @@ class ScheduleHandlerMixin:
         if not selected_group:
             return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
-        target_date = datetime.now() + timedelta(days=offset)
-        schedule = await scraper._get_schedule_for_date(selected_group, target_date)
+        target_date = kyiv_now() + timedelta(days=offset)
+        subgroup = user_subgroup(user, selected_group)
+        schedule = filter_schedule(await scraper._get_schedule_for_date(selected_group, target_date), subgroup)
         weekdays = get_msg("schedule.weekdays", language=language).split("|")
 
         relative_day = ""
@@ -82,6 +85,7 @@ class ScheduleHandlerMixin:
             date=target_date.strftime("%d.%m.%Y"),
             group=selected_group,
         )
+        text += get_msg("schedule.subgroup_scope", language=language, value=self._subgroup_label(subgroup, language))
         saturday_source = get_saturday_source(schedule)
         if saturday_source:
             source_weekday, source_week = saturday_source
@@ -116,7 +120,7 @@ class ScheduleHandlerMixin:
                         ]
                     )
                 else:
-                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
+                    text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item, language)}\n"
 
         extra_buttons = (
             self.get_building_shortcuts(schedule_buildings([schedule]), f"nav_schedule:{offset}") + pdf_buttons
@@ -135,7 +139,7 @@ class ScheduleHandlerMixin:
         if not selected_group:
             return get_msg("group.need_group", language=language), self.get_main_keyboard(language)
 
-        now = datetime.now()
+        now = kyiv_now()
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         sunday = monday + timedelta(days=6)
         text = get_html_msg(
@@ -148,6 +152,9 @@ class ScheduleHandlerMixin:
         weekdays = get_msg("schedule.weekdays", language=language).split("|")
         tasks = [scraper._get_schedule_for_date(selected_group, monday + timedelta(days=index)) for index in range(7)]
         week_schedules = await asyncio.gather(*tasks)
+        subgroup = user_subgroup(user, selected_group)
+        week_schedules = [filter_schedule(day, subgroup) for day in week_schedules]
+        text += get_msg("schedule.subgroup_scope", language=language, value=self._subgroup_label(subgroup, language))
 
         all_pdfs = {}
         has_any_classes = False
@@ -173,7 +180,7 @@ class ScheduleHandlerMixin:
                         week=source_week,
                     )
                 for item in day_classes:
-                    text += f"  ⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item)}\n"
+                    text += f"  ⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item, language)}\n"
                 text += "\n"
 
         if not has_any_classes:
@@ -273,8 +280,10 @@ class ScheduleHandlerMixin:
             return
 
         await callback.answer(get_msg("share.preparing", language=language))
-        target_date = datetime.now() + timedelta(days=offset)
-        schedule = await scraper._get_schedule_for_date(group_name, target_date)
+        target_date = kyiv_now() + timedelta(days=offset)
+        schedule = filter_schedule(
+            await scraper._get_schedule_for_date(group_name, target_date), user_subgroup(user, group_name)
+        )
         shared = build_day_share(group_name, target_date, schedule, language)
         if not shared:
             await callback.message.answer(get_msg("share.empty_day", language=language))
@@ -301,7 +310,7 @@ class ScheduleHandlerMixin:
             return
 
         await callback.answer(get_msg("share.preparing", language=language))
-        now = datetime.now()
+        now = kyiv_now()
         monday = now - timedelta(days=now.weekday()) + timedelta(weeks=offset_weeks)
         week_schedules = await asyncio.gather(
             *[
@@ -309,6 +318,7 @@ class ScheduleHandlerMixin:
                 for day_offset in range(7)
             ]
         )
+        week_schedules = [filter_schedule(day, user_subgroup(user, group_name)) for day in week_schedules]
         shared = build_week_share(group_name, monday, week_schedules, language)
         if not shared:
             await callback.message.answer(get_msg("share.empty_week", language=language))
@@ -323,7 +333,7 @@ class ScheduleHandlerMixin:
 
     async def process_export_ics(self, callback: CallbackQuery, state: FSMContext | None = None):
         user_id = callback.from_user.id
-        now = datetime.now()
+        now = kyiv_now()
         language = await self._get_user_language(user_id, callback.from_user.language_code)
 
         for key in [key for key, value in ics_cooldown.items() if (now - value).total_seconds() > 300]:
@@ -344,6 +354,7 @@ class ScheduleHandlerMixin:
         week_schedules = await asyncio.gather(
             *[scraper._get_schedule_for_date(group_name, monday + timedelta(days=index)) for index in range(7)]
         )
+        week_schedules = [filter_schedule(day, user_subgroup(user, group_name)) for day in week_schedules]
         schedule_data = {
             monday + timedelta(days=index): schedule for index, schedule in enumerate(week_schedules) if schedule
         }
@@ -367,7 +378,7 @@ class ScheduleHandlerMixin:
             await callback.message.answer(get_msg("export.error", language=language))
 
     async def process_ask_custom_date(self, callback: CallbackQuery, state: FSMContext):
-        now = datetime.now()
+        now = kyiv_now()
         language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
         await callback.message.edit_text(
             get_msg("schedule.ask_date", language=language),
@@ -408,7 +419,7 @@ class ScheduleHandlerMixin:
             await callback.answer()
             return
 
-        now = datetime.now()
+        now = kyiv_now()
         try:
             target_date = (
                 now

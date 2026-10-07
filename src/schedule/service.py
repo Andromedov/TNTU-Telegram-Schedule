@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from bs4 import BeautifulSoup, Tag
 
+from infrastructure.clock import KYIV_TZ, kyiv_now
 from infrastructure.http_client import HttpRequestError, http_client
 from schedule.diff import compare_schedule_snapshots, lesson_identity
 from schedule.parsing import (
@@ -77,7 +78,7 @@ def _write_snapshots_sync(snapshots: dict):
 async def fetch_schedule_html(group_name: str, *, raise_on_network_error: bool = False) -> Optional[str]:
     clean_group = sanitize_group(group_name)
     clean_group_no_hyphen = clean_group.upper().replace("-", "")
-    now = datetime.now()
+    now = kyiv_now()
     cached = _html_cache.get(clean_group)
     if cached and now - cached["timestamp"] < timedelta(minutes=CACHE_TTL_MINUTES):
         return cached["html"]
@@ -148,7 +149,7 @@ async def fetch_schedule_html(group_name: str, *, raise_on_network_error: bool =
 
 async def get_semester_dates() -> Optional[Tuple[datetime, datetime]]:
     global _semester_dates_cache, _semester_dates_cache_time
-    now = datetime.now()
+    now = kyiv_now()
     if (
         _semester_dates_cache
         and _semester_dates_cache_time
@@ -214,6 +215,8 @@ async def get_schedule_changes(group_name: str) -> list:
 
 
 async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list:
+    if target_date.tzinfo is not None:
+        target_date = target_date.astimezone(KYIV_TZ)
     html = await fetch_schedule_html(group_name)
     group_exists, table, pdf_links, soup = parse_core_data(html, group_name)
     if not group_exists:
@@ -278,8 +281,8 @@ async def _get_schedule_for_date(group_name: str, target_date: datetime) -> list
 
 
 async def parse_schedule_for_today(group_name: str) -> list:
-    return await _get_schedule_for_date(group_name, datetime.now())
+    return await _get_schedule_for_date(group_name, kyiv_now())
 
 
 async def parse_schedule_for_tomorrow(group_name: str) -> list:
-    return await _get_schedule_for_date(group_name, datetime.now() + timedelta(days=1))
+    return await _get_schedule_for_date(group_name, kyiv_now() + timedelta(days=1))

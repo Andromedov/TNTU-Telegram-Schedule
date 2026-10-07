@@ -10,6 +10,7 @@ from config import DB_PATH
 EXPECTED_COLUMNS = {
     'username': 'TEXT',
     'group_name': 'TEXT',
+    'subgroup': 'INTEGER',
     'notify_10_min': 'BOOLEAN DEFAULT 1',
     'reminder_offset': 'INTEGER DEFAULT 10',
     'notify_evening': 'BOOLEAN DEFAULT 1',
@@ -69,7 +70,9 @@ async def add_or_update_user(user_id: int, group_name: str = None, language: str
                 """
                              INSERT INTO users (user_id, group_name, language)
                              VALUES (?, ?, ?) ON CONFLICT(user_id) DO
-                             UPDATE SET group_name=excluded.group_name
+                             UPDATE SET
+                             subgroup=CASE WHEN users.group_name=excluded.group_name THEN users.subgroup ELSE NULL END,
+                             group_name=excluded.group_name
                              """,
                 (user_id, group_name, language),
             )

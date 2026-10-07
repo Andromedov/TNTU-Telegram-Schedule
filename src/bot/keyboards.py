@@ -8,6 +8,28 @@ from jobs.reminders import REMINDER_LESSON_TYPES, temporary_notifications_are_mu
 
 class KeyboardMixin:
     @staticmethod
+    def _subgroup_label(subgroup: int | None, language: str) -> str:
+        return (
+            get_msg("settings.subgroup_number", language=language, number=subgroup)
+            if subgroup
+            else get_msg("settings.subgroup_all", language=language)
+        )
+
+    @classmethod
+    def get_subgroup_keyboard(cls, language: str = "uk") -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=cls._subgroup_label(value or None, language), callback_data=f"set_subgroup:{value}"
+                    )
+                ]
+                for value in (0, 1, 2)
+            ]
+            + [[InlineKeyboardButton(text=get_msg("calendar.back", language=language), callback_data="show_settings")]]
+        )
+
+    @staticmethod
     def get_language_keyboard() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[
@@ -165,6 +187,16 @@ class KeyboardMixin:
         )
 
         rows = [
+            [
+                InlineKeyboardButton(
+                    text=get_msg(
+                        "settings.subgroup",
+                        language=language,
+                        value=KeyboardMixin._subgroup_label(user_dict.get("subgroup"), language),
+                    ),
+                    callback_data="settings_subgroup",
+                )
+            ],
             [InlineKeyboardButton(text=remind_text, callback_data="settings_reminder")],
             [InlineKeyboardButton(text=first_remind_text, callback_data="settings_first_reminder")],
             [InlineKeyboardButton(text=lesson_types_text, callback_data="settings_lesson_types")],

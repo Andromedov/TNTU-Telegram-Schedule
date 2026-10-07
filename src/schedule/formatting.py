@@ -1,6 +1,8 @@
 from html import escape
 from urllib.parse import urlparse, urlunparse
 
+from i18n.messages import get_msg
+
 
 def normalize_atutor_url(value: str | None) -> str | None:
     """Переводить офіційні ATutor-посилання на HTTPS."""
@@ -30,20 +32,22 @@ def html_link(label: object, url: str | None) -> str:
     return f'<a href="{escape(normalized_url, quote=True)}">{safe_label}</a>'
 
 
-def lesson_plain_text(item: dict) -> str:
+def lesson_plain_text(item: dict, language: str = "uk") -> str:
     """Формує назву пари без Telegram HTML."""
     subject = str(item.get("subject") or item.get("name") or "")
     if not item.get("subject"):
         return subject
 
     details = [str(value) for value in (item.get("lesson_type"), item.get("location")) if value]
+    if item.get("subgroup"):
+        details.append(get_msg("schedule.subgroup_label", language=language, number=item["subgroup"]))
     result = subject + (f" ({', '.join(details)})" if details else "")
     if item.get("notes"):
         result += f" ❗️{item['notes']}"
     return result
 
 
-def lesson_html(item: dict) -> str:
+def lesson_html(item: dict, language: str = "uk") -> str:
     """Формує безпечний HTML; клікабельна лише назва дисципліни."""
     subject = str(item.get("subject") or item.get("name") or "")
     escaped_subject = escape(subject)
@@ -55,6 +59,8 @@ def lesson_html(item: dict) -> str:
         return escaped_subject
 
     details = [escape(str(value)) for value in (item.get("lesson_type"), item.get("location")) if value]
+    if item.get("subgroup"):
+        details.append(get_msg("schedule.subgroup_label", language=language, number=item["subgroup"]))
     result = escaped_subject + (f" ({', '.join(details)})" if details else "")
     if item.get("notes"):
         result += f" ❗️{escape(str(item['notes']))}"

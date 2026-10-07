@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 import pytz
 
+from schedule.formatting import lesson_plain_text
+
 
 def _escape_text(value: str) -> str:
     """Екранує значення типу TEXT відповідно до RFC 5545."""
@@ -65,7 +67,7 @@ def generate_week_ics(group_name: str, schedule_data: dict) -> str:
                 continue
 
             time_str = item.get('time', '')
-            name = _escape_text(item.get('name', 'Пара'))
+            name = _escape_text(lesson_plain_text(item) or 'Пара')
 
             parts = time_str.split('-')
             try:

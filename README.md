@@ -19,6 +19,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 ## ✨ Features
 
 - 📅 **View Schedule** - Display the classes at any time.
+- 👥 **Subgroups** - In Settings, choose the entire group or subgroup 1/2. Common classes are always included; the selection also applies to reminders, sharing, and calendar export. Another group's schedule shows all its subgroups. Changing your main group resets this choice.
 - 🌙 **Evening Schedule Delivery** - Automatically send tomorrow's schedule every evening at 20:00.
 - ⏰ **10-Minute Reminders** - Get notified 10 minutes before each class starts.
 - 🌅 **Smart Reminders** - Configure the first class separately, choose lesson types and quiet hours, receive a morning digest, snooze for five minutes, or mute notifications until tomorrow.
@@ -35,6 +36,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - **Framework:** [aiogram 3.x](https://docs.aiogram.dev/) (Asynchronous Telegram Bot API)
 - **Database:** aiosqlite (Local `users.sqlite3` for preferences and selected groups)
 - **Scheduling:** APScheduler (For evening deliveries and pre-class reminders)
+- **Time zone:** Schedule dates and reminders use `Europe/Kyiv`, independently of the server's local time zone.
 - **Data Source:** Web scraping the official [TNTU Website](https://tntu.edu.ua/) using `beautifulsoup4` and `aiohttp`.
 
 ## 🚀 Installation & Setup

@@ -69,6 +69,8 @@ class ScheduleBotHandlers(
         self.router.callback_query.register(self.process_campus_building, F.data.startswith("campus_building:"))
 
         self.router.callback_query.register(self.process_show_settings, F.data == "show_settings")
+        self.router.callback_query.register(self.process_settings_subgroup, F.data == "settings_subgroup")
+        self.router.callback_query.register(self.process_set_subgroup, F.data.startswith("set_subgroup:"))
         self.router.callback_query.register(self.process_settings_language, F.data == "settings_language")
         self.router.callback_query.register(self.process_set_language, F.data.startswith("set_language:"))
         self.router.callback_query.register(self.process_settings_reminder, F.data == "settings_reminder")
