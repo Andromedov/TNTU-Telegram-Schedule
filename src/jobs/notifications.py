@@ -81,7 +81,7 @@ async def send_evening_schedule(bot: Bot, now_provider=kyiv_now):
                     if not has_pdf:
                         text += "\n" + f"<s>{'—' * 25}</s>\n\n"
                         has_pdf = True
-                    text += f"📄 {html_link(item['name'], item.get('viewer_url'))}\n"
+                    text += f"📄 {html_link(item['name'], item.get('url'))}\n"
                 else:
                     text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item, language)}\n"
             try:

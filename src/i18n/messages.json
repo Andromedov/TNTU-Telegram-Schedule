@@ -116,7 +116,7 @@
       "invalid": "❌ Не вдалося визначити потрібний період.",
       "truncated": "Частину розкладу приховано через ліміт Telegram."
     },
-    "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Натисніть «Відкрити (Web)»."},
+    "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Скористайтеся посиланням на PDF у повідомленні з розкладом."},
     "reminders": {
       "class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
       "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв",
@@ -239,7 +239,7 @@
       "invalid": "❌ Could not determine the requested period.",
       "truncated": "Part of the schedule was hidden due to Telegram's limit."
     },
-    "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Select “Open (Web)”."},
+    "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Use the PDF link in the schedule message."},
     "reminders": {
       "class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>",
       "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min",

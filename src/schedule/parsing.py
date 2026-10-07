@@ -98,6 +98,11 @@ def extract_text(element: Tag) -> str:
     return " ".join(value for text in element.strings if (value := str(text).strip()))
 
 
+def group_schedule_url(group_name: str) -> str:
+    slug = transliterate_for_url(sanitize_group(group_name.strip()))
+    return f"{TNTU_SCHEDULE_URL}?p=uk/schedule&s=-{urllib.parse.quote(slug, safe='')}"
+
+
 def is_valid_schedule_page(soup: BeautifulSoup, clean_group_no_hyphen: str) -> bool:
     has_target_heading = any(
         isinstance(heading, Tag)

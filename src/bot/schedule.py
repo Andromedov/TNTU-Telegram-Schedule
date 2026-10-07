@@ -14,8 +14,9 @@ from i18n.messages import get_html_msg, get_msg, trusted_html
 from infrastructure import database as db
 from infrastructure.clock import kyiv_now
 from schedule import service as scraper
-from schedule.formatting import lesson_html
+from schedule.formatting import html_link, lesson_html
 from schedule.ics import generate_week_ics
+from schedule.parsing import group_schedule_url
 from schedule.saturday import get_saturday_source
 from schedule.sharing import build_day_share, build_week_share, get_share_message_keyboard
 from schedule.subgroups import filter_schedule, user_subgroup
@@ -105,14 +106,10 @@ class ScheduleHandlerMixin:
                     if not has_pdf:
                         text += f"\n<s>{'—' * 25}</s>\n\n"
                         has_pdf = True
-                    text += f"📄 <b>{escape(str(item['name']))}</b>\n"
+                    text += f"📄 <b>{html_link(item['name'], item['url'])}</b>\n"
                     pdf_key = get_pdf_key(item["url"])
                     pdf_buttons.append(
                         [
-                            InlineKeyboardButton(
-                                text=get_msg("keyboard.open_web", language=language),
-                                url=item["viewer_url"],
-                            ),
                             InlineKeyboardButton(
                                 text=get_msg("keyboard.get_file", language=language),
                                 callback_data=f"send_pdf:{pdf_key}",
@@ -124,6 +121,13 @@ class ScheduleHandlerMixin:
 
         extra_buttons = (
             self.get_building_shortcuts(schedule_buildings([schedule]), f"nav_schedule:{offset}") + pdf_buttons
+        )
+        extra_buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=get_msg("keyboard.open_web", language=language), url=group_schedule_url(selected_group)
+                )
+            ]
         )
         return text, self.get_schedule_nav_keyboard(offset, extra_buttons, language)
 
@@ -190,13 +194,10 @@ class ScheduleHandlerMixin:
         if all_pdfs:
             text += f"<s>{'—' * 25}</s>\n\n"
             for pdf in all_pdfs.values():
-                text += f"📄 <b>{escape(str(pdf['name']))}</b>\n"
+                text += f"📄 <b>{html_link(pdf['name'], pdf['url'])}</b>\n"
                 pdf_key = get_pdf_key(pdf["url"])
                 pdf_buttons.append(
                     [
-                        InlineKeyboardButton(
-                            text=get_msg("keyboard.open_web", language=language), url=pdf["viewer_url"]
-                        ),
                         InlineKeyboardButton(
                             text=get_msg("keyboard.get_file", language=language),
                             callback_data=f"send_pdf:{pdf_key}",
@@ -211,6 +212,13 @@ class ScheduleHandlerMixin:
 
         extra_buttons = (
             self.get_building_shortcuts(schedule_buildings(week_schedules), f"nav_week:{offset_weeks}") + pdf_buttons
+        )
+        extra_buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=get_msg("keyboard.open_web", language=language), url=group_schedule_url(selected_group)
+                )
+            ]
         )
         return text, self.get_week_nav_keyboard(offset_weeks, extra_buttons, language)
 
