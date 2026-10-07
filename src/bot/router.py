@@ -12,9 +12,7 @@ from bot.campus import CampusHandlerMixin
 from bot.common import (
     AdminState,
     UserState,
-    get_pdf_key as _get_pdf_key,
     ics_cooldown as _ics_cooldown,
-    pdf_cache as _pdf_cache,
 )
 from bot.keyboards import KeyboardMixin
 from bot.lifecycle import LifecycleHandlerMixin
@@ -96,7 +94,6 @@ class ScheduleBotHandlers(
         self.router.callback_query.register(self.process_view_other_group, F.data == "view_other_group")
         self.router.callback_query.register(self.process_back_to_main, F.data == "back_to_main")
         self.router.callback_query.register(self.process_toggles, F.data.startswith("toggle_"))
-        self.router.callback_query.register(self.process_send_pdf, F.data.startswith("send_pdf:"))
         self.router.callback_query.register(self.process_delete_msg, F.data == "delete_msg")
 
         self.router.callback_query.register(self.process_admin_stats, F.data == "admin_stats")

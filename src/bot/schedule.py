@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.calendar import get_calendar_keyboard
-from bot.common import get_pdf_key, ics_cooldown
+from bot.common import ics_cooldown
 from campus.directory import schedule_buildings
 from i18n.messages import get_html_msg, get_msg, trusted_html
 from infrastructure import database as db
@@ -96,7 +96,6 @@ class ScheduleHandlerMixin:
                 weekday=weekdays[source_weekday],
                 week=source_week,
             )
-        pdf_buttons = []
         if not schedule:
             text += get_msg("schedule.no_classes_today", language=language)
         else:
@@ -107,21 +106,10 @@ class ScheduleHandlerMixin:
                         text += f"\n<s>{'—' * 25}</s>\n\n"
                         has_pdf = True
                     text += f"📄 <b>{html_link(item['name'], item['url'])}</b>\n"
-                    pdf_key = get_pdf_key(item["url"])
-                    pdf_buttons.append(
-                        [
-                            InlineKeyboardButton(
-                                text=get_msg("keyboard.get_file", language=language),
-                                callback_data=f"send_pdf:{pdf_key}",
-                            ),
-                        ]
-                    )
                 else:
                     text += f"⏰ <b>{escape(str(item['time']))}</b> - {lesson_html(item, language)}\n"
 
-        extra_buttons = (
-            self.get_building_shortcuts(schedule_buildings([schedule]), f"nav_schedule:{offset}") + pdf_buttons
-        )
+        extra_buttons = self.get_building_shortcuts(schedule_buildings([schedule]), f"nav_schedule:{offset}")
         extra_buttons.append(
             [
                 InlineKeyboardButton(
@@ -190,29 +178,17 @@ class ScheduleHandlerMixin:
         if not has_any_classes:
             text += get_msg("schedule.no_classes_week", language=language) + "\n\n"
 
-        pdf_buttons = []
         if all_pdfs:
             text += f"<s>{'—' * 25}</s>\n\n"
             for pdf in all_pdfs.values():
                 text += f"📄 <b>{html_link(pdf['name'], pdf['url'])}</b>\n"
-                pdf_key = get_pdf_key(pdf["url"])
-                pdf_buttons.append(
-                    [
-                        InlineKeyboardButton(
-                            text=get_msg("keyboard.get_file", language=language),
-                            callback_data=f"send_pdf:{pdf_key}",
-                        ),
-                    ]
-                )
 
         if len(text) > 3900:
             cut_index = text.rfind("\n", 0, 3900)
             if cut_index != -1:
                 text = text[:cut_index] + "\n\n" + get_msg("schedule.truncated", language=language)
 
-        extra_buttons = (
-            self.get_building_shortcuts(schedule_buildings(week_schedules), f"nav_week:{offset_weeks}") + pdf_buttons
-        )
+        extra_buttons = self.get_building_shortcuts(schedule_buildings(week_schedules), f"nav_week:{offset_weeks}")
         extra_buttons.append(
             [
                 InlineKeyboardButton(

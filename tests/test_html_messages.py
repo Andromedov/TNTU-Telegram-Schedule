@@ -72,7 +72,7 @@ class ScheduleHtmlTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("A<1>", text)
         self.assertIn('<a href="https://example.com/a.pdf">PDF &lt;draft&gt; &amp; notes</a>', text)
         self.assertNotIn("https://example.com/view", text)
-        self.assertTrue(
+        self.assertFalse(
             any(
                 button.callback_data and button.callback_data.startswith("send_pdf:")
                 for row in keyboard.inline_keyboard
@@ -99,5 +99,12 @@ class ScheduleHtmlTests(unittest.IsolatedAsyncioTestCase):
                     text, keyboard = await generate(1, 0, "СТс-21")
                     urls = [button.url for row in keyboard.inline_keyboard for button in row if button.url]
                     self.assertEqual(["https://tntu.edu.ua/?p=uk/schedule&s=-sts21"], urls)
+                    self.assertFalse(
+                        any(
+                            button.callback_data and button.callback_data.startswith("send_pdf:")
+                            for row in keyboard.inline_keyboard
+                            for button in row
+                        )
+                    )
                     if schedule:
                         self.assertEqual(1, text.count('<a href="https://example.com/saturday.pdf">'))

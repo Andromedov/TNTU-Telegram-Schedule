@@ -11,7 +11,7 @@
       "dismiss": "✅ Прочитано", "menu": "🏠 Меню", "refresh": "🔄 Оновити",
       "previous_week": "⬅️ Тиждень", "next_week": "Тиждень ➡️",
       "current_week": "📍 Поточний тиждень", "export_ics": "📲 Експорт у календар (.ics)",
-      "open_web": "👀 Відкрити (Web)", "get_file": "📩 Отримати файлом",
+      "open_web": "👀 Відкрити (Web)",
       "language": "🌐 Мова: Українська", "campus": "🏫 Корпуси та аудиторії"
     },
     "start": {
@@ -116,7 +116,6 @@
       "invalid": "❌ Не вдалося визначити потрібний період.",
       "truncated": "Частину розкладу приховано через ліміт Telegram."
     },
-    "pdf": {"expired": "❌ Посилання застаріло. Оновіть розклад.", "loading": "⏳ Завантажую файл...", "caption": "📄 <b>Ваш розклад</b>", "error": "❌ Не вдалося завантажити файл. Скористайтеся посиланням на PDF у повідомленні з розкладом."},
     "reminders": {
       "class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
       "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв",
@@ -140,7 +139,7 @@
       "change_group": "🔄 Change group", "view_other_group": "👥 Another group", "back": "🔙 Back to menu", "custom_date": "📅 Choose a date",
       "dismiss": "✅ Dismiss", "menu": "🏠 Menu", "refresh": "🔄 Refresh", "previous_week": "⬅️ Week",
       "next_week": "Week ➡️", "current_week": "📍 Current week", "export_ics": "📲 Export to calendar (.ics)",
-      "open_web": "👀 Open (Web)", "get_file": "📩 Get file", "language": "🌐 Language: English",
+      "open_web": "👀 Open (Web)", "language": "🌐 Language: English",
       "campus": "🏫 Buildings and rooms"
     },
     "start": {
@@ -239,7 +238,6 @@
       "invalid": "❌ Could not determine the requested period.",
       "truncated": "Part of the schedule was hidden due to Telegram's limit."
     },
-    "pdf": {"expired": "❌ This link has expired. Refresh the schedule.", "loading": "⏳ Downloading file...", "caption": "📄 <b>Your schedule</b>", "error": "❌ Could not download the file. Use the PDF link in the schedule message."},
     "reminders": {
       "class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>",
       "minutes": "{value} min", "hours": "{value} hr", "hours_minutes": "{hours} hr {minutes} min",

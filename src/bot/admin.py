@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from bot.common import AdminState, pdf_cache
+from bot.common import AdminState
 from bot.privacy import erase_user_data
 from config import APP_VERSION, SENIOR_ID
 from i18n.messages import get_html_msg, get_msg
@@ -56,26 +56,6 @@ class AdminHandlerMixin:
     @staticmethod
     def _is_admin(user_id: int) -> bool:
         return bool(SENIOR_ID and user_id == SENIOR_ID)
-
-    async def process_send_pdf(self, callback: CallbackQuery):
-        language = await self._get_user_language(callback.from_user.id, callback.from_user.language_code)
-        key = callback.data.split(":", 1)[1]
-        url = pdf_cache.get(key)
-        if not url:
-            await callback.answer(get_msg("pdf.expired", language=language), show_alert=True)
-            return
-        await callback.answer(get_msg("pdf.loading", language=language), show_alert=False)
-        try:
-            await callback.message.answer_document(
-                document=url,
-                caption=get_msg("pdf.caption", language=language),
-                parse_mode="HTML",
-            )
-        except Exception as error:
-            import logging
-
-            logging.error("Помилка відправки PDF документу: %s", error)
-            await callback.message.answer(get_msg("pdf.error", language=language))
 
     async def process_delete_msg(self, callback: CallbackQuery):
         try:
