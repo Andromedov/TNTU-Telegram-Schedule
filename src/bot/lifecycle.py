@@ -1,7 +1,7 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.common import UserState
+from bot.common import UserState, is_valid_group_input, normalize_group_input
 from config import SENIOR_ID
 from i18n.messages import get_html_msg, get_msg, trusted_html
 from infrastructure import database as db
@@ -19,6 +19,7 @@ class LifecycleHandlerMixin:
         language = self._user_language(user, message.from_user.language_code)
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
+        await state.update_data(view_group=None)
 
         if not user or not user["group_name"]:
             await db.add_or_update_user(message.from_user.id, language=language)
@@ -55,6 +56,7 @@ class LifecycleHandlerMixin:
 
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
+        await state.update_data(view_group=None)
         msg = await message.answer(
             get_msg("settings.title", language=language),
             parse_mode="HTML",
@@ -71,6 +73,7 @@ class LifecycleHandlerMixin:
         language = self._user_language(user, message.from_user.language_code)
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
+        await state.update_data(view_group=None)
         msg = await message.answer(
             get_msg("campus.title", language=language),
             parse_mode="HTML",
@@ -88,6 +91,7 @@ class LifecycleHandlerMixin:
             return
         await self._cleanup_old_ui(message, state)
         await state.set_state(None)
+        await state.update_data(view_group=None)
         msg = await message.answer(
             "👑 <b>Адмін Панель</b>\nОберіть розділ нижче:",
             parse_mode="HTML",
@@ -96,7 +100,7 @@ class LifecycleHandlerMixin:
         await state.update_data(last_ui_msg_id=msg.message_id)
 
     async def process_group_name_fsm(self, message: Message, state: FSMContext):
-        group_name = message.text.upper().strip()
+        group_name = normalize_group_input(message.text)
         user = await db.get_user(message.from_user.id)
         language = self._user_language(user, message.from_user.language_code)
 
@@ -105,12 +109,7 @@ class LifecycleHandlerMixin:
         except Exception:
             pass
 
-        clean_name = group_name.replace("-", "").replace(" ", "")
-        if (
-            len(clean_name) < 3
-            or not any(char.isalpha() for char in clean_name)
-            or not any(char.isdigit() for char in clean_name)
-        ):
+        if not is_valid_group_input(group_name):
             new_msg = await message.answer(get_msg("group.invalid", language=language), parse_mode="HTML")
             await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
             return
@@ -136,6 +135,73 @@ class LifecycleHandlerMixin:
             )
         await state.update_data(last_ui_msg_id=processing_msg.message_id)
 
+    async def process_view_other_group(self, callback: CallbackQuery, state: FSMContext):
+        user = await db.get_user(callback.from_user.id)
+        language = self._user_language(user, callback.from_user.language_code)
+        if not user or not user["group_name"]:
+            await callback.answer(get_msg("group.need_group", language=language), show_alert=True)
+            return
+
+        await callback.message.edit_text(
+            get_msg("group.ask_view", language=language),
+            parse_mode="HTML",
+            reply_markup=self.get_cancel_to_main_keyboard(language),
+        )
+        await state.set_state(UserState.waiting_for_view_group)
+        await state.update_data(
+            view_group=None,
+            prompt_msg_id=callback.message.message_id,
+            last_ui_msg_id=callback.message.message_id,
+        )
+        await callback.answer()
+
+    async def process_view_group_name_fsm(self, message: Message, state: FSMContext):
+        group_name = normalize_group_input(message.text)
+        user = await db.get_user(message.from_user.id)
+        language = self._user_language(user, message.from_user.language_code)
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if not user or not user["group_name"]:
+            await state.set_state(None)
+            await message.answer(get_msg("group.need_group", language=language))
+            return
+
+        if not is_valid_group_input(group_name):
+            new_msg = await message.answer(
+                get_msg("group.invalid", language=language),
+                parse_mode="HTML",
+                reply_markup=self.get_cancel_to_main_keyboard(language),
+            )
+            await state.update_data(prompt_msg_id=new_msg.message_id, last_ui_msg_id=new_msg.message_id)
+            return
+
+        processing_msg = await message.answer(
+            get_html_msg("group.checking", language=language, group=group_name),
+            parse_mode="HTML",
+        )
+        if not await scraper.check_group_exists(group_name):
+            await processing_msg.edit_text(
+                get_html_msg("group.not_found", language=language, group=group_name),
+                parse_mode="HTML",
+                reply_markup=self.get_cancel_to_main_keyboard(language),
+            )
+            await state.update_data(last_ui_msg_id=processing_msg.message_id)
+            return
+
+        await state.set_state(None)
+        await state.update_data(view_group=group_name, last_ui_msg_id=processing_msg.message_id)
+        text, keyboard = await self._generate_schedule_ui(message.from_user.id, 0, group_name)
+        await processing_msg.edit_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=keyboard,
+        )
+
     async def process_any_text(self, message: Message):
         try:
             await message.delete()
@@ -147,6 +213,7 @@ class LifecycleHandlerMixin:
         await callback.message.edit_text(get_msg("group.ask_new", language=language))
         await state.set_state(UserState.waiting_for_group)
         await state.update_data(
+            view_group=None,
             prompt_msg_id=callback.message.message_id,
             last_ui_msg_id=callback.message.message_id,
         )
@@ -154,6 +221,7 @@ class LifecycleHandlerMixin:
 
     async def process_back_to_main(self, callback: CallbackQuery, state: FSMContext):
         await state.set_state(None)
+        await state.update_data(view_group=None)
         user = await db.get_user(callback.from_user.id)
         language = self._user_language(user, callback.from_user.language_code)
         if not user or not user["group_name"]:

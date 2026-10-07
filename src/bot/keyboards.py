@@ -39,6 +39,12 @@ class KeyboardMixin:
                 [InlineKeyboardButton(text=get_msg("keyboard.campus", language=language), callback_data="show_campus")],
                 [
                     InlineKeyboardButton(
+                        text=get_msg("keyboard.view_other_group", language=language),
+                        callback_data="view_other_group",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
                         text=get_msg("keyboard.settings", language=language), callback_data="show_settings"
                     )
                 ],
@@ -47,6 +53,14 @@ class KeyboardMixin:
                         text=get_msg("keyboard.change_group", language=language), callback_data="change_group"
                     )
                 ],
+            ]
+        )
+
+    @staticmethod
+    def get_cancel_to_main_keyboard(language: str = "uk") -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=get_msg("keyboard.back", language=language), callback_data="back_to_main")]
             ]
         )
 
