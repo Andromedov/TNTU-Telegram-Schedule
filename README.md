@@ -23,6 +23,7 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - 🌙 **Evening Schedule Delivery** - Automatically send tomorrow's schedule every evening at 20:00.
 - ⏰ **10-Minute Reminders** - Get notified 10 minutes before each class starts.
 - 🌅 **Smart Reminders** - Configure the first class separately, choose lesson types and quiet hours, receive a morning digest, snooze for five minutes, or mute notifications until tomorrow.
+- 📢 **Air raid alerts** - Class reminders include the current yellow or red alert for Ternopil district, with online-class or shelter instructions. Snoozed reminders check the status again.
 - 🔔 **Detailed Schedule Changes** - See which class, time, type, building, room, note, or ATutor link changed.
 - ⚙️ **Customizable Settings** - Toggle notifications and pause alerts as needed.
 - 🌐 **Ukrainian and English UI** - Choose the interface language in bot settings.
@@ -38,6 +39,9 @@ Provides real-time access to schedules, sends reminders, and allows customizable
 - **Scheduling:** APScheduler (For evening deliveries and pre-class reminders)
 - **Time zone:** Schedule dates and reminders use `Europe/Kyiv`, independently of the server's local time zone.
 - **Data Source:** Web scraping the official [TNTU Website](https://tntu.edu.ua/) using `beautifulsoup4` and `aiohttp`.
+- **Air raid alert source:** [Tryvoha.online API](https://tryvoha.online/api), without registration or an API key.
+
+> Maybe I need to request an API key in ukrainealarm or alerts.in.ua, but I don't know if I should at this point in time
 
 ## 🚀 Installation & Setup
 

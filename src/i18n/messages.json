@@ -116,6 +116,12 @@
       "invalid": "❌ Не вдалося визначити потрібний період.",
       "truncated": "Частину розкладу приховано через ліміт Telegram."
     },
+    "air_alerts": {
+      "header": "<b>Тернопільський район</b>",
+      "yellow": "🟡 Наразі триває жовтий рівень повітряної тривоги, пара повинна проходити онлайн!",
+      "red": "🔴 Наразі триває червоний рівень повітряної тривоги, пройдіть в укриття.",
+      "unknown": "🟣 Не вдалося перевірити стан повітряної тривоги. Перевірте офіційні канали оповіщення."
+    },
     "reminders": {
       "class_starts": "⏳ За {time_str} почнеться пара:\n<b>{subject_name}</b>",
       "minutes": "{value} хв", "hours": "{value} год", "hours_minutes": "{hours} год {minutes} хв",
@@ -237,6 +243,12 @@
       "empty_week": "🏖 There are no classes to share this week.",
       "invalid": "❌ Could not determine the requested period.",
       "truncated": "Part of the schedule was hidden due to Telegram's limit."
+    },
+    "air_alerts": {
+      "header": "<b>Ternopil district</b>",
+      "yellow": "A yellow-level air raid alert is currently active. The class must take place online!",
+      "red": "A red-level air raid alert is currently active. Proceed to a shelter.",
+      "unknown": "Could not check the air raid alert status. Check official warning channels."
     },
     "reminders": {
       "class_starts": "⏳ Class starts in {time_str}:\n<b>{subject_name}</b>",
