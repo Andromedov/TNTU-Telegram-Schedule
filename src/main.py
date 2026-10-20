@@ -7,6 +7,7 @@ from bot.middleware import UserActivityMiddleware
 from bot.router import ScheduleBotHandlers
 from config import BOT_TOKEN
 from i18n.messages import get_msg
+from infrastructure.air_alerts import air_alert_service
 from infrastructure.database import init_db
 from infrastructure.http_client import http_client
 from jobs.scheduler import setup_scheduler
@@ -41,6 +42,7 @@ async def main():
         if scheduler is not None and scheduler.running:
             scheduler.shutdown(wait=False)
         await http_client.close()
+        await air_alert_service.close()
         await bot.session.close()
 
 

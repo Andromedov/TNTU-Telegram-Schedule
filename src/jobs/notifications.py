@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from i18n.messages import get_html_msg, get_msg, normalize_language, trusted_html
 from infrastructure import database as db
+from jobs.air_alerts import with_air_alert
 from jobs.formatting import (
     format_reminder_offset,
     format_schedule_changes,
@@ -117,6 +118,7 @@ async def send_class_reminder(bot: Bot, user_id: int, lesson: dict | str, schedu
         time_str=format_reminder_offset(offset, language),
         subject_name=trusted_html(subject),
     )
+    text = await with_air_alert(text, language)
     try:
         await bot.send_message(
             user_id,
@@ -182,8 +184,15 @@ async def send_snoozed_reminder(bot: Bot, user_id: int, html_text: str):
     if not user or notifications_are_muted(dict(user)) or not user["notify_10_min"]:
         return
     language = normalize_language(dict(user).get("language"))
+    html_text = await with_air_alert(html_text, language)
     try:
-        await bot.send_message(user_id, html_text, parse_mode="HTML", reply_markup=get_reminder_keyboard(language))
+        await bot.send_message(
+            user_id,
+            html_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=get_reminder_keyboard(language),
+        )
     except Exception as error:
         logging.error("Помилка повторного нагадування користувачу %s: %s", user_id, error)
 
